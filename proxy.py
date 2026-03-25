@@ -5,31 +5,75 @@ from fastapi import FastAPI, Request, Response
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
 
+import os
+
 app = FastAPI()
 analyzer = AnalyzerEngine()
 anonymizer = AnonymizerEngine()
 
-# The target Google internal endpoint
-TARGET_URL = "https://cloudcode-pa.googleapis.com"
+# Load configurations from environment
+DEFAULT_EXCLUSIONS = os.getenv("DEFAULT_EXCLUSIONS", "").split(",")
+DEFAULT_EXCLUSIONS = [ex.strip() for ex in DEFAULT_EXCLUSIONS if ex.strip()]
+SCRUBBING_MODE = os.getenv("SCRUBBING_MODE", "generic").lower()
+
+# The target LLM provider endpoint
+TARGET_URL = os.getenv("TARGET_URL", "https://cloudcode-pa.googleapis.com")
 
 async def scrub_text(text: str):
     """
-    Uses Presidio to redact PII from the prompt.
-    Returns the scrubbed text and a mapping of placeholders to original values.
+    Uses Presidio and custom regex/exclusion logic to redact PII.
+    Supports 'semantic' and 'generic' modes.
     """
-    results = analyzer.analyze(text=text, language='en')
-    
-    # Sort results by start index descending to avoid index shifts during replacement
-    sorted_results = sorted(results, key=lambda x: x.start, reverse=True)
-    
     mapping = {}
     scrubbed_text = text
     
-    for i, res in enumerate(sorted_results):
-        placeholder = f"<{res.entity_type}_{i}>"
-        original_value = text[res.start:res.end]
-        mapping[placeholder] = original_value
-        scrubbed_text = scrubbed_text[:res.start] + placeholder + scrubbed_text[res.end:]
+    # 1. Collect all potential matches with their labels
+    # We use a list of tuples (text, label) to preserve the source of the match
+    potential_matches = []
+
+    # Presidio PII Detection
+    results = analyzer.analyze(text=text, language='en')
+    for res in results:
+        potential_matches.append((text[res.start:res.end], res.entity_type))
+
+    # IP Pattern Detection
+    ips = re.findall(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', text)
+    for ip in ips:
+        potential_matches.append((ip, "IP_ADDRESS"))
+
+    # "Gibberish" Alphanumeric (6+ chars, mix of letters and numbers)
+    potential_gibberish = re.findall(r'\b(?=[a-zA-Z]*\d)(?=\d*[a-zA-Z])[a-zA-Z0-9]{6,}\b', text)
+    for g in potential_gibberish:
+        potential_matches.append((g, "GIBBERISH"))
+
+    # Custom Exclusions
+    for excluded in DEFAULT_EXCLUSIONS:
+        if excluded in text:
+            potential_matches.append((excluded, "EXCLUSION"))
+
+    # 2. Sort matches by length descending to avoid partial replacements
+    # (e.g., "secret123" before "secret")
+    potential_matches.sort(key=lambda x: len(x[0]), reverse=True)
+
+    # 3. Apply replacements based on mode
+    counts = {}
+    seen_texts = {} # text -> placeholder mapping to avoid redundant processing
+
+    for secret, label in potential_matches:
+        if not secret or secret in seen_texts:
+            continue
+            
+        if SCRUBBING_MODE == "semantic":
+            counts[label] = counts.get(label, 0) + 1
+            placeholder = f"<{label}_{counts[label]}>"
+        else:
+            # Generic mode: all PII uses the same PRIVATE_DATA prefix
+            counts["PRIVATE_DATA"] = counts.get("PRIVATE_DATA", 0) + 1
+            placeholder = f"<PRIVATE_DATA_{counts['PRIVATE_DATA']}>"
+            
+        mapping[placeholder] = secret
+        seen_texts[secret] = placeholder
+        scrubbed_text = scrubbed_text.replace(secret, placeholder)
         
     return scrubbed_text, mapping
 
