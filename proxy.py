@@ -18,13 +18,17 @@ ANALYZER_TYPE = os.getenv("ANALYZER_TYPE", "both").lower()
 # The target LLM provider endpoint
 TARGET_URL = os.getenv("TARGET_URL", "https://cloudcode-pa.googleapis.com")
 
-# Conditionally initialize Presidio
 analyzer = None
-if ANALYZER_TYPE in ["presidio", "both"]:
-    try:
-        analyzer = AnalyzerEngine()
-    except Exception as e:
-        print(f"[Error] Failed to initialize Presidio: {e}")
+
+def get_analyzer():
+    global analyzer
+    if analyzer is None:
+        try:
+            from presidio_analyzer import AnalyzerEngine
+            analyzer = AnalyzerEngine()
+        except Exception as e:
+            print(f"[Error] Failed to initialize Presidio: {e}")
+    return analyzer
 
 async def scrub_text(text: str):
     """
@@ -40,10 +44,12 @@ async def scrub_text(text: str):
     potential_matches = []
 
     # Presidio PII Detection (Names, Emails, etc.)
-    if analyzer and ANALYZER_TYPE in ["presidio", "both"]:
-        results = analyzer.analyze(text=text, language='en')
-        for res in results:
-            potential_matches.append((text[res.start:res.end], res.entity_type))
+    if ANALYZER_TYPE in ["presidio", "both"]:
+        az = get_analyzer()
+        if az:
+            results = az.analyze(text=text, language='en')
+            for res in results:
+                potential_matches.append((text[res.start:res.end], res.entity_type))
 
     # Pattern Detection (IPs, Gibberish, Exclusions)
     if ANALYZER_TYPE in ["pattern", "both"]:
@@ -57,10 +63,10 @@ async def scrub_text(text: str):
         for g in potential_gibberish:
             potential_matches.append((g, "PRIVATE_KEY"))
 
-        # Custom Exclusions
-        for excluded in DEFAULT_EXCLUSIONS:
-            if excluded in text:
-                potential_matches.append((excluded, "PRIVATE_DATA"))
+    # Custom Exclusions
+    for excluded in DEFAULT_EXCLUSIONS:
+        if excluded in text:
+            potential_matches.append((excluded, "PRIVATE_DATA"))
 
     # 2. Sort matches by length descending to avoid partial replacements
     # (e.g., "secret123" before "secret")
