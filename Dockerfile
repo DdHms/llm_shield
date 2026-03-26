@@ -1,5 +1,5 @@
 FROM python:3.11-slim
-RUN pip install fastapi uvicorn httpx presidio-analyzer presidio-anonymizer spacy && \
+RUN pip install fastapi uvicorn httpx presidio-analyzer presidio-anonymizer spacy pytest pytest-asyncio && \
     python -m spacy download en_core_web_lg
 
 # Build argument for exclusions (comma-separated)

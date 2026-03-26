@@ -58,7 +58,20 @@ A privacy-preserving proxy for LLMs (Local and Remote) that automatically identi
     docker run -p 8080:8080 -e TARGET_URL="https://api.openai.com" llm-proxy-pii
     ```
 
-The proxy will be available at `http://localhost:8080`.
+### Running Tests
+
+You can run the unit and E2E tests using `pytest`:
+
+1.  **Install dependencies locally**:
+    ```bash
+    pip install pytest pytest-asyncio fastapi httpx presidio-analyzer presidio-anonymizer spacy
+    python -m spacy download en_core_web_lg
+    ```
+
+2.  **Run the tests**:
+    ```bash
+    pytest
+    ```
 
 ## TODO List
 
@@ -66,4 +79,4 @@ The proxy will be available at `http://localhost:8080`.
 - [x] **Streaming Support**: Implement logic to handle chunked/streaming responses (SSE) and de-anonymize data on-the-fly.
 - [ ] **Conversation Persistence**: Maintain PII mappings across multiple turns of a conversation for consistent redaction/restoration.
 - [ ] **Custom Entity Support**: Allow users to define custom regex or logic for specific sensitive data types.
-- [ ] **Comprehensive Testing**: Create a suite of tests to verify PII handling across different edge cases.
+- [x] **Comprehensive Testing**: Create a suite of tests to verify PII handling across different edge cases.
