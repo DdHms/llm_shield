@@ -11,18 +11,20 @@ A privacy-preserving proxy for LLMs (Local and Remote) that automatically identi
 - **Two Scrubbing Modes**:
     - `generic` (Default): All PII is replaced with a standard `<PRIVATE_DATA_N>` placeholder.
     - `semantic`: PII is replaced with descriptive placeholders (e.g., `<PERSON_N>`, `<IP_ADDRESS_N>`).
-- **Custom Exclusions**: Explicitly redact specific strings (e.g., internal service names, cluster IDs) by passing them at build time.
+- **Toggleable Analyzers**: Choose between `presidio` (Deep PII), `pattern` (Fast Regex), or `both` at build time.
+- **Custom Exclusions**: Explicitly redact specific strings by passing them at build time.
 - **Response De-anonymization**: Automatically restores original PII in the model's response before returning it to the client.
 - **Streaming Support**: Handles chunked/streaming responses (SSE) with a buffering mechanism to prevent de-scrubbing failures on split placeholders.
-- **Configurable Backend**: Works with Gemini Internal APIs by default but can be configured for any endpoint.
+- **Visual Dashboard**: Integrated web interface at `/dashboard` to monitor scrubbing and de-scrubbing in real-time.
 
 ## How It Works
 
 1.  **Intercept**: The proxy captures incoming POST requests.
-2.  **Analyze & Scrub**: It parses the request body, identifies PII using the `presidio-analyzer` and custom regex, and replaces it with unique placeholders based on the selected `SCRUBBING_MODE`.
+2.  **Analyze & Scrub**: It parses the request body, identifies PII using the selected `ANALYZER_TYPE`, and replaces it with unique placeholders based on the `SCRUBBING_MODE`.
 3.  **Map**: A temporary mapping of `placeholder -> original_value` is stored for the duration of the request.
 4.  **Forward**: The scrubbed request is forwarded to the `TARGET_URL`.
-5.  **Restore**: When the response arrives, the proxy recursively scans the JSON for placeholders and replaces them with the original values from the mapping.
+5.  **Restore & Log**: When the response arrives, the proxy restores the original data and logs the transformation.
+6.  **Display**: View real-time logs at `http://localhost:8080/dashboard`.
 
 ## Configuration
 
@@ -41,46 +43,23 @@ A privacy-preserving proxy for LLMs (Local and Remote) that automatically identi
 
 ### Building and Running
 
-1.  **Build with default settings (Both Analyzers, Generic Mode)**:
+1.  **Build with default settings**:
     ```bash
     docker build -t llm-proxy-pii .
     ```
 
-2.  **Build with Pattern-only Analyzer and Semantic Mode**:
+2.  **Run the container**:
     ```bash
-    docker build \
-      --build-arg ANALYZER_TYPE="pattern" \
-      --build-arg SCRUBBING_MODE="semantic" \
-      --build-arg DEFAULT_EXCLUSIONS="dev-db-cluster-01" \
-      -t llm-proxy-pii .
+    docker run -p 8080:8080 llm-proxy-pii
     ```
 
-3.  **Run with a custom target**:
-    ```bash
-    docker run -p 8080:8080 -e TARGET_URL="https://api.openai.com" llm-proxy-pii
-    ```
-
-### Running Tests
-
-You can run the unit and E2E tests using `pytest`:
-
-1.  **Set up the virtual environment**:
-    ```bash
-    python3 -m venv .venv
-    source .venv/bin/activate
-    pip install -r requirements.txt
-    python -m spacy download en_core_web_lg
-    ```
-
-2.  **Run the tests**:
-    ```bash
-    pytest
-    ```
+The proxy will be available at `http://localhost:8080`.
+The dashboard will be available at `http://localhost:8080/dashboard`.
 
 ## TODO List
 
-- [ ] **OpenAI/Local LLM Support**: Add handlers for `/v1/chat/completions` to support OpenAI, Ollama, vLLM, and other standard APIs.
-- [x] **Streaming Support**: Implement logic to handle chunked/streaming responses (SSE) and de-anonymize data on-the-fly.
-- [ ] **Conversation Persistence**: Maintain PII mappings across multiple turns of a conversation for consistent redaction/restoration.
-- [ ] **Custom Entity Support**: Allow users to define custom regex or logic for specific sensitive data types.
-- [x] **Comprehensive Testing**: Create a suite of tests to verify PII handling across different edge cases.
+- [ ] **OpenAI/Local LLM Support**: Add handlers for `/v1/chat/completions`.
+- [x] **Streaming Support**: Logic for chunked/streaming responses.
+- [ ] **Conversation Persistence**: Maintain PII mappings across multiple turns.
+- [x] **Visual Dashboard**: Web interface for log monitoring.
+- [x] **Comprehensive Testing**: Unit and E2E tests included.
