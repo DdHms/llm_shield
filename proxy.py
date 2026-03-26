@@ -8,21 +8,29 @@ from presidio_anonymizer import AnonymizerEngine
 import os
 
 app = FastAPI()
-analyzer = AnalyzerEngine()
-anonymizer = AnonymizerEngine()
 
 # Load configurations from environment
 DEFAULT_EXCLUSIONS = os.getenv("DEFAULT_EXCLUSIONS", "").split(",")
 DEFAULT_EXCLUSIONS = [ex.strip() for ex in DEFAULT_EXCLUSIONS if ex.strip()]
 SCRUBBING_MODE = os.getenv("SCRUBBING_MODE", "generic").lower()
+ANALYZER_TYPE = os.getenv("ANALYZER_TYPE", "both").lower()
 
 # The target LLM provider endpoint
 TARGET_URL = os.getenv("TARGET_URL", "https://cloudcode-pa.googleapis.com")
+
+# Conditionally initialize Presidio
+analyzer = None
+if ANALYZER_TYPE in ["presidio", "both"]:
+    try:
+        analyzer = AnalyzerEngine()
+    except Exception as e:
+        print(f"[Error] Failed to initialize Presidio: {e}")
 
 async def scrub_text(text: str):
     """
     Uses Presidio and custom regex/exclusion logic to redact PII.
     Supports 'semantic' and 'generic' modes.
+    Supports 'presidio', 'pattern', and 'both' analyzer types.
     """
     mapping = {}
     scrubbed_text = text
@@ -31,25 +39,28 @@ async def scrub_text(text: str):
     # We use a list of tuples (text, label) to preserve the source of the match
     potential_matches = []
 
-    # Presidio PII Detection
-    results = analyzer.analyze(text=text, language='en')
-    for res in results:
-        potential_matches.append((text[res.start:res.end], res.entity_type))
+    # Presidio PII Detection (Names, Emails, etc.)
+    if analyzer and ANALYZER_TYPE in ["presidio", "both"]:
+        results = analyzer.analyze(text=text, language='en')
+        for res in results:
+            potential_matches.append((text[res.start:res.end], res.entity_type))
 
-    # IP Pattern Detection
-    ips = re.findall(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', text)
-    for ip in ips:
-        potential_matches.append((ip, "IP_ADDRESS"))
+    # Pattern Detection (IPs, Gibberish, Exclusions)
+    if ANALYZER_TYPE in ["pattern", "both"]:
+        # IP Pattern Detection
+        ips = re.findall(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', text)
+        for ip in ips:
+            potential_matches.append((ip, "IP_ADDRESS"))
 
-    # "Gibberish" Alphanumeric (6+ chars, mix of letters and numbers)
-    potential_gibberish = re.findall(r'\b(?=[a-zA-Z]*\d)(?=\d*[a-zA-Z])[a-zA-Z0-9]{6,}\b', text)
-    for g in potential_gibberish:
-        potential_matches.append((g, "GIBBERISH"))
+        # "Gibberish" Alphanumeric (6+ chars, mix of letters and numbers)
+        potential_gibberish = re.findall(r'\b(?=[a-zA-Z]*\d)(?=\d*[a-zA-Z])[a-zA-Z0-9]{6,}\b', text)
+        for g in potential_gibberish:
+            potential_matches.append((g, "PRIVATE_KEY"))
 
-    # Custom Exclusions
-    for excluded in DEFAULT_EXCLUSIONS:
-        if excluded in text:
-            potential_matches.append((excluded, "EXCLUSION"))
+        # Custom Exclusions
+        for excluded in DEFAULT_EXCLUSIONS:
+            if excluded in text:
+                potential_matches.append((excluded, "PRIVATE_DATA"))
 
     # 2. Sort matches by length descending to avoid partial replacements
     # (e.g., "secret123" before "secret")

@@ -10,6 +10,10 @@ ENV DEFAULT_EXCLUSIONS=$DEFAULT_EXCLUSIONS
 ARG SCRUBBING_MODE="generic"
 ENV SCRUBBING_MODE=$SCRUBBING_MODE
 
+# Build argument for analyzer type (presidio, pattern, or both)
+ARG ANALYZER_TYPE="both"
+ENV ANALYZER_TYPE=$ANALYZER_TYPE
+
 # Target LLM provider (default: Google Cloud Code)
 ENV TARGET_URL="https://cloudcode-pa.googleapis.com"
 

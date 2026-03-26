@@ -29,6 +29,7 @@ A privacy-preserving proxy for LLMs (Local and Remote) that automatically identi
 | Build Arg / Env Var | Default | Description |
 |---------------------|---------|-------------|
 | `SCRUBBING_MODE`    | `generic` | `generic` or `semantic` labels. |
+| `ANALYZER_TYPE`     | `both`    | `presidio`, `pattern`, or `both`. |
 | `DEFAULT_EXCLUSIONS`| `""`      | Comma-separated list of strings to always redact. |
 | `TARGET_URL`        | `https://cloudcode-pa.googleapis.com` | The destination LLM API. |
 
@@ -40,16 +41,17 @@ A privacy-preserving proxy for LLMs (Local and Remote) that automatically identi
 
 ### Building and Running
 
-1.  **Build with default settings (Generic Mode)**:
+1.  **Build with default settings (Both Analyzers, Generic Mode)**:
     ```bash
     docker build -t llm-proxy-pii .
     ```
 
-2.  **Build with Semantic Mode and Custom Exclusions**:
+2.  **Build with Pattern-only Analyzer and Semantic Mode**:
     ```bash
     docker build \
+      --build-arg ANALYZER_TYPE="pattern" \
       --build-arg SCRUBBING_MODE="semantic" \
-      --build-arg DEFAULT_EXCLUSIONS="dev-db-cluster-01,super-secret-service" \
+      --build-arg DEFAULT_EXCLUSIONS="dev-db-cluster-01" \
       -t llm-proxy-pii .
     ```
 
