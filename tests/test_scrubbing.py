@@ -68,3 +68,43 @@ async def test_semantic_mode():
     # Verify de-scrubbing restores it
     restored = de_scrub_text(scrubbed, mapping)
     assert restored == text
+
+@pytest.mark.asyncio
+async def test_sequential_scrubbing_priority():
+    # Set an exclusion that overlaps with what Presidio might find
+    # 'John Doe' is a name, but we want it scrubbed as an EXCLUSION first.
+    import proxy
+    proxy.DEFAULT_EXCLUSIONS = ["John Doe"]
+    proxy.SCRUBBING_MODE = "semantic"
+    proxy.ANALYZER_TYPE = "both"
+    
+    text = "Hello, my name is John Doe."
+    scrubbed, mapping = await scrub_text(text)
+    
+    # 1. Verify it was caught by the EXCLUSION logic first
+    # If it was caught by Presidio, it would be <PERSON_1>
+    # If it was caught by Exclusion, it will be <EXCLUSION_1>
+    assert "<EXCLUSION_1>" in scrubbed
+    assert "<PERSON_1>" not in scrubbed
+    
+    # 2. Verify mapping is correct
+    assert mapping["<EXCLUSION_1>"] == "John Doe"
+    
+    # 3. Verify restoration
+    restored = de_scrub_text(scrubbed, mapping)
+    assert restored == text
+
+@pytest.mark.asyncio
+async def test_overlap_exclusion_handling():
+    # Test that longer exclusions are handled before shorter ones
+    import proxy
+    proxy.DEFAULT_EXCLUSIONS = ["super-secret-service", "super-secret"]
+    proxy.SCRUBBING_MODE = "generic"
+    
+    text = "Deploying to super-secret-service now."
+    scrubbed, mapping = await scrub_text(text)
+    
+    # It should replace the long one entirely, not partially
+    assert "<PRIVATE_DATA_1>" in scrubbed
+    assert "-service" not in scrubbed 
+    assert mapping["<PRIVATE_DATA_1>"] == "super-secret-service"
