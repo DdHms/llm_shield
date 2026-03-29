@@ -1,0 +1,27 @@
+{
+  "name": "gemini-privacy-shield",
+  "version": "0.1.0",
+  "description": "Native Node.js bridge for a PII Privacy Proxy using Rust and Python",
+  "main": "index.js",
+  "scripts": {
+    "build": "napi build --release",
+    "preinstall": "pip install -r requirements.txt",
+    "start": "node index.js"
+  },
+  "keywords": [
+    "pii",
+    "privacy",
+    "proxy",
+    "napi-rs",
+    "pyo3",
+    "gemini"
+  ],
+  "author": "ML Algorithm Developer",
+  "license": "MIT",
+  "dependencies": {
+    "@napi-rs/cli": "^2.16.2"
+  },
+  "napi": {
+    "name": "gemini-privacy-shield"
+  }
+}
