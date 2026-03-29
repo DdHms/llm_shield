@@ -16,7 +16,7 @@ jobs:
           - host: windows-latest
             target: x86_64-pc-windows-msvc
             name: windows-x64
-          - host: macos-13
+          - host: macos-14
             target: x86_64-apple-darwin
             name: macos-intel
           - host: macos-14
@@ -51,9 +51,7 @@ jobs:
       - name: Build
         run: npx napi build --release --target ${{ matrix.settings.target }}
         env:
-          PYO3_PYTHON: python
-          # On macOS, ensure we are linking against the system-provided Python framework or the one from setup-python
-          LDFLAGS: "-undefined dynamic_lookup"
+          PYO3_PYTHON: python3
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
