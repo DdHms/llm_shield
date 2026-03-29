@@ -1,0 +1,53 @@
+{
+  "name": "gemini-privacy-shield",
+  "version": "1.0.0",
+  "description": "Cross-platform PII scrubbing proxy for Gemini",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.gemini.privacyshield",
+    "productName": "Gemini Privacy Shield",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      "engine/**/*"
+    ],
+    "mac": {
+      "target": "dmg",
+      "extraResources": [
+        {
+          "from": "engine",
+          "to": "engine",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "target": "nsis",
+      "extraResources": [
+        {
+          "from": "engine",
+          "to": "engine",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
+    }
+  }
+}
