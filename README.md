@@ -39,6 +39,14 @@ A privacy-preserving proxy for LLMs (Local and Remote) that automatically identi
 | `TARGET_URL`        | `https://cloudcode-pa.googleapis.com` | The destination LLM API. |
 | `DEBUG`             | `false`   | Set to `true` for verbose step-by-step logs. |
 
+For example:
+```shell
+ docker build --build-arg ANALYZER_TYPE="both"\
+  --build-arg SCRUBBING_MODE="semantic"\
+   --build-arg DEFAULT_EXCLUSIONS="my-db-cluster,internal-service-01"\
+    -t llm-proxy-pii .
+```
+
 ### CLI Integration
 
 To use this proxy with the Gemini CLI, set the following environment variable in your shell:
