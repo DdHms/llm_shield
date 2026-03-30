@@ -1,5 +1,5 @@
 {
-  "name": "@yedidyahyams/llm-shield",
+  "name": "@DdHms/llm-shield",
   "version": "0.1.0",
   "description": "Native Node.js bridge for a PII Privacy Proxy using Rust and Python",
   "main": "index.js",
@@ -20,7 +20,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yedidyahyams/llm-shield.git"
+    "url": "git+https://github.com/DdHms/llm-shield.git"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
