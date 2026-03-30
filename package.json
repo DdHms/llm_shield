@@ -1,5 +1,5 @@
 {
-  "name": "gemini-privacy-shield",
+  "name": "llm-shield",
   "version": "0.1.0",
   "description": "Native Node.js bridge for a PII Privacy Proxy using Rust and Python",
   "main": "index.js",
@@ -22,6 +22,6 @@
     "@napi-rs/cli": "^2.16.2"
   },
   "napi": {
-    "name": "gemini-privacy-shield"
+    "name": "llm-shield"
   }
 }

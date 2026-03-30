@@ -1,4 +1,4 @@
-const { startPrivacyProxy } = require('./gemini-privacy-shield.node');
+const { startPrivacyProxy } = require('./llm-shield.node');
 
 /**
  * Starts the Gemini Privacy Shield proxy.

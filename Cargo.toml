@@ -1,5 +1,5 @@
 [package]
-name = "gemini-privacy-shield"
+name = "llm-shield"
 version = "0.1.0"
 edition = "2021"
 
