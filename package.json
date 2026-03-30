@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "napi build --release",
-    "preinstall": "pip install -r requirements.txt",
+    "postinstall": "pip install -r requirements.txt && python -m spacy download en_core_web_lg",
     "start": "node index.js"
   },
   "keywords": [
@@ -18,6 +18,13 @@
   ],
   "author": "ML Algorithm Developer",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YOUR_USERNAME/llm-shield.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "dependencies": {
     "@napi-rs/cli": "^2.16.2"
   },

@@ -1,10 +1,12 @@
-name: Build Native Addon
+name: Build and Release LLM Shield
 
 on:
   push:
     branches:
       - main
       - rust-node
+    tags:
+      - 'v*' # Trigger on version tags (e.g. v1.0.0)
   pull_request:
 
 jobs:
@@ -59,3 +61,36 @@ jobs:
           name: bridge-${{ matrix.settings.name }}
           path: "*.node"
           if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare assets
+        run: |
+          mkdir release-assets
+          cp artifacts/bridge-windows-x64/*.node release-assets/
+          cp artifacts/bridge-macos-intel/*.node release-assets/
+          cp artifacts/bridge-macos-silicon/*.node release-assets/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*.node
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

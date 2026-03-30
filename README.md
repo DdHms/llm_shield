@@ -24,7 +24,7 @@ A privacy-preserving proxy for Large Language Models (LLMs) that automatically i
 
 ## ⚙️ Configuration
 
-The application is configured using Environment Variables. These can be passed via Docker, set in your shell, or passed directly to the Node process.
+LLM Shield is configured using Environment Variables. You can pass these directly when starting the application.
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
@@ -34,81 +34,71 @@ The application is configured using Environment Variables. These can be passed v
 | `TARGET_URL` | `https://cloudcode-pa.googleapis.com` | The destination LLM API. |
 | `DEBUG` | `false` | Set to `true` for verbose logs. |
 
-### How to Pass Arguments
+### How to Pass Arguments with NPM
+
+To configure the shield, pass the environment variables **before** the `npm start` command.
 
 #### **Mac / Linux (Zsh or Bash)**
 ```bash
-ANALYZER_TYPE=presidio DEFAULT_EXCLUSIONS="my-api-key,internal-ip" node index.js
+# Example: Use semantic labels and exclude specific internal terms
+SCRUBBING_MODE=semantic DEFAULT_EXCLUSIONS="my-api-key,internal-db-01" npm start
 ```
 
 #### **Windows (PowerShell)**
 ```powershell
-$env:ANALYZER_TYPE="presidio"; $env:DEFAULT_EXCLUSIONS="my-api-key,internal-ip"; node index.js
+# Example: Use semantic labels and exclude specific internal terms
+$env:SCRUBBING_MODE="semantic"; $env:DEFAULT_EXCLUSIONS="my-api-key,internal-ip"; npm start
 ```
 
 ---
 
-## 🚀 Setup & Installation
+## 🚀 Installation & Setup (The "One-Click" Way)
 
-### Option 1: Using Pre-built Artifacts (Easiest)
-Download pre-compiled binaries from the **GitHub Actions** tab for your OS (Windows, Mac Intel, or Mac Silicon).
+This method is recommended for most users. It uses pre-compiled native binaries so you **don't** need Rust or a C++ compiler installed.
 
-1.  **Download** the artifact matching your OS.
-2.  **Unzip** and place the `.node` file in the project root.
-3.  **Rename** the file to `llm-shield.node`.
-4.  **Run**:
-    ```bash
-    npm install --production  # Install Python dependencies
-    node index.js
-    ```
+### 1. Download Binaries
+Download the pre-compiled `.node` files from the **GitHub Actions** tab for your OS and place them in the project root.
+*   `llm-shield.x86_64-pc-windows-msvc.node` (Windows)
+*   `llm-shield.x86_64-apple-darwin.node` (Mac Intel)
+*   `llm-shield.aarch64-apple-darwin.node` (Mac Silicon)
 
-### Option 2: Docker (Containerized)
-Recommended for quick setup and isolated environments.
+### 2. Install & Run
+Run these commands in your terminal:
 
-1.  **Build**:
-    ```bash
-    docker build -t llm-shield .
-    ```
-2.  **Run**:
-    ```bash
-    docker run -p 8080:8080 -e SCRUBBING_MODE=semantic llm-shield
-    ```
+```bash
+# 1. This automatically sets up your Python environment and NLP models
+npm install
 
-### Option 3: Build from Source (Native Node.js Addon)
-Best for developers wanting the full native desktop experience.
-
-**Prerequisites:** Node.js (v22+), Rust & Cargo, Python 3.10+.
-
-1.  **Install & Build**:
-    ```bash
-    npm install
-    npm run build
-    ```
-2.  **Start**:
-    ```bash
-    npm start
-    ```
+# 2. This detects your OS and launches the proxy + GUI
+npm start
+```
 
 ---
 
 ## 🔗 Gemini CLI Integration
 
-To route your Gemini CLI traffic through the shield:
+To route your Gemini CLI traffic through the shield, set your endpoint in your shell:
 
 ```bash
+# Mac/Linux
 export CODE_ASSIST_ENDPOINT="http://localhost:8080"
+
+# Windows PowerShell
+$env:CODE_ASSIST_ENDPOINT="http://localhost:8080"
 ```
 
 ---
 
 ## 🧪 Development & Testing
 
-### Virtual Environment
+If you want to modify the Rust or Python code:
+
+### Build from Source
+**Prerequisites:** Node.js (v22+), Rust & Cargo, Python 3.10+.
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python -m spacy download en_core_web_lg
+npm install
+npm run build
+npm start
 ```
 
 ### Run Tests
