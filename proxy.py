@@ -336,6 +336,24 @@ async def proxy_engine(request: Request, path: str):
         status_code=response.status_code, headers=resp_headers
     )
 
+import webview
+import threading
+import uvicorn
+
+def start_fastapi():
+    # Runs your FastAPI server in the background
+    uvicorn.run(app, host="127.0.0.1", port=8080, log_level="info")
+
+def run_application():
+    # 1. Start FastAPI in a background thread
+    t = threading.Thread(target=start_fastapi)
+    t.daemon = True
+    t.start()
+
+    # 2. Open a beautiful native GUI window for the user
+    # Point this to the local dashboard endpoint
+    webview.create_window('Gemini Privacy Shield', 'http://127.0.0.1:8080/dashboard')
+    webview.start()
+
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    run_application()

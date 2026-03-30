@@ -6,3 +6,4 @@ presidio-anonymizer
 spacy
 pytest
 pytest-asyncio
+pywebview
