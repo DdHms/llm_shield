@@ -162,7 +162,7 @@ async def get_dashboard():
         <script src="https://cdn.tailwindcss.com"></script>
     </head>
     <body class="bg-gray-50 font-sans">
-        <div class="max-w-7xl mx-auto px-4 py-8">
+        <div class="max-w-[1600px] mx-auto px-4 py-8">
             <header class="mb-8 flex justify-between items-center">
                 <h1 class="text-3xl font-bold text-gray-900">Privacy Proxy Logs</h1>
                 <button onclick="fetchLogs()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">Refresh</button>
@@ -344,18 +344,27 @@ import uvicorn
 
 def start_fastapi():
     # Runs your FastAPI server in the background
-    uvicorn.run(app, host="127.0.0.1", port=8080, log_level="info")
+    # Use 0.0.0.0 to allow access from outside the container
+    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info")
 
 def run_application():
-    # 1. Start FastAPI in a background thread
-    t = threading.Thread(target=start_fastapi)
-    t.daemon = True
-    t.start()
+    # 1. Start FastAPI
+    if os.getenv("HEADLESS", "false").lower() == "true":
+        print("Running in HEADLESS mode (FastAPI only)...")
+        start_fastapi()
+    else:
+        t = threading.Thread(target=start_fastapi)
+        t.daemon = True
+        t.start()
 
-    # 2. Open a beautiful native GUI window for the user
-    # Point this to the local dashboard endpoint
-    webview.create_window('Gemini Privacy Shield', 'http://127.0.0.1:8080/dashboard')
-    webview.start()
+        # 2. Open a beautiful native GUI window for the user
+        try:
+            webview.create_window('Gemini Privacy Shield', 'http://127.0.0.1:8080/dashboard')
+            webview.start()
+        except Exception as e:
+            print(f"GUI failed to start: {e}. Falling back to server only.")
+            # If GUI fails (common in Docker), keep the thread alive or restart in main
+            start_fastapi()
 
 if __name__ == "__main__":
     run_application()
