@@ -94,7 +94,7 @@ async def scrub_text(text: str):
         for ip in ips:
             potential_matches.append((ip, "IP_ADDRESS"))
 
-        potential_gibberish = re.findall(r'\b(?=[a-zA-Z0-9-]*\d)(?=[a-zA-Z0-9-]*[a-zA-Z])[a-zA-Z0-9-]{6,}\b', scrubbed_text)
+        potential_gibberish = re.findall(r'\b(?=[a-zA-Z0-9-_]*\d)(?=[a-zA-Z0-9-_]*[a-zA-Z])[a-zA-Z0-9-_]{6,}\b', scrubbed_text)
         for g in potential_gibberish:
             potential_matches.append((g, "PRIVATE_KEY"))
 
@@ -373,6 +373,7 @@ def start_fastapi():
 
 def run_application():
     import webview
+    import threading
     # 1. Start FastAPI
     if os.getenv("HEADLESS", "false").lower() == "true":
         print("Running in HEADLESS mode (FastAPI only)...")
