@@ -1,0 +1,6 @@
+{
+  "llm-shield.x86_64-pc-windows-msvc.node": "EXPECTED_HASH_HERE",
+  "llm-shield.x86_64-apple-darwin.node": "EXPECTED_HASH_HERE",
+  "llm-shield.aarch64-apple-darwin.node": "EXPECTED_HASH_HERE",
+  "llm-shield.node": "EXPECTED_HASH_HERE"
+}
