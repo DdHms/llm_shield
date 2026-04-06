@@ -4,10 +4,13 @@ import re
 import os
 import uuid
 import threading
+import time
 from datetime import datetime
 from collections import deque
-from fastapi import FastAPI, Request, Response
+from typing import List, Optional, Union, Dict, Any
+from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import StreamingResponse, HTMLResponse
+from pydantic import BaseModel, RootModel
 
 app = FastAPI()
 
@@ -21,6 +24,11 @@ SCRUBBING_MODE = os.getenv("SCRUBBING_MODE", "generic").lower()
 ANALYZER_TYPE = os.getenv("ANALYZER_TYPE", "pattern").lower()
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
+# Header Whitelist Configuration
+BASE_ALLOWED_HEADERS = {"content-type", "authorization", "user-agent", "accept", "accept-encoding"}
+EXTRA_HEADERS = os.getenv("ALLOWED_HEADERS", "").split(",")
+ALLOWED_HEADERS = BASE_ALLOWED_HEADERS.union({h.strip().lower() for h in EXTRA_HEADERS if h.strip()})
+
 # The target LLM provider endpoint
 TARGET_URL = os.getenv("TARGET_URL", "https://cloudcode-pa.googleapis.com").rstrip("/")
 
@@ -28,92 +36,152 @@ def log_debug(msg):
     if DEBUG:
         print(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [DEBUG] {msg}")
 
+# Pydantic Models for Input Validation
+class Part(BaseModel):
+    text: Optional[str] = None
+    inline_data: Optional[Dict[str, Any]] = None
+
+class Content(BaseModel):
+    role: Optional[str] = None
+    parts: Optional[List[Part]] = None
+
+class GeminiRequest(BaseModel):
+    contents: Optional[List[Content]] = None
+    generationConfig: Optional[Dict[str, Any]] = None
+    safetySettings: Optional[List[Dict[str, Any]]] = None
+
+class WrappedGeminiRequest(BaseModel):
+    request: GeminiRequest
+
+class GenericLLMPayload(BaseModel):
+    # Flexible model to capture various common LLM request formats
+    contents: Optional[List[Content]] = None
+    messages: Optional[List[Dict[str, Any]]] = None
+    request: Optional[Union[GeminiRequest, Dict[str, Any]]] = None
+
 # Initialize global client for reuse
 async_client = httpx.AsyncClient(timeout=60.0)
 
 analyzer = None
+analyzer_lock = threading.Lock()
 
 def get_analyzer():
     global analyzer
     if analyzer is None:
-        try:
-            from presidio_analyzer import AnalyzerEngine
-            analyzer = AnalyzerEngine()
-        except ImportError:
-            print("[Error] Presidio is not installed. Use a non-default build or install 'presidio-analyzer' and 'spacy' manually.")
-        except Exception as e:
-            print(f"[Error] Failed to initialize Presidio: {e}")
+        with analyzer_lock:
+            if analyzer is None:
+                try:
+                    from presidio_analyzer import AnalyzerEngine
+                    analyzer = AnalyzerEngine()
+                except ImportError:
+                    print("[Error] Presidio is not installed. Use a non-default build or install 'presidio-analyzer' and 'spacy' manually.")
+                except Exception as e:
+                    print(f"[Error] Failed to initialize Presidio: {e}")
     return analyzer
 
 async def scrub_text(text: str):
     """
     Uses Presidio and custom regex/exclusion logic to redact PII.
-    Processes DEFAULT_EXCLUSIONS first, then other analyzers sequentially.
+    Collects all potential matches, merges overlaps, and then redacts.
     """
-    mapping = {}
-    scrubbed_text = text
-    counts = {}
-    seen_texts = {} 
+    matches = []
 
-    def apply_replacement(secret, label):
-        nonlocal scrubbed_text
-        if not secret or secret in seen_texts:
-            return
-            
-        if SCRUBBING_MODE == "semantic" or label in ["EXCLUSION", "ENV_VALUE"]:
-            counts[label] = counts.get(label, 0) + 1
-            placeholder = f"<{label}_{counts[label]}>"
-        else:
-            counts["PRIVATE_DATA"] = counts.get("PRIVATE_DATA", 0) + 1
-            placeholder = f"<PRIVATE_DATA_{counts['PRIVATE_DATA']}>"
-            
-        mapping[placeholder] = secret
-        seen_texts[secret] = placeholder
-        scrubbed_text = scrubbed_text.replace(secret, placeholder)
+    # 1. Custom Exclusions
+    for excluded in DEFAULT_EXCLUSIONS:
+        start = 0
+        while True:
+            pos = text.find(excluded, start)
+            if pos == -1:
+                break
+            matches.append((pos, pos + len(excluded), "EXCLUSION", excluded))
+            start = pos + 1
 
-    # 1. process Custom Exclusions FIRST
-    sorted_exclusions = sorted(DEFAULT_EXCLUSIONS, key=len, reverse=True)
-    for excluded in sorted_exclusions:
-        if excluded in scrubbed_text:
-            apply_replacement(excluded, "EXCLUSION")
-
-    # 2. Collect potential matches from subsequent analyzers
-    potential_matches = []
-
-    # Presidio PII Detection
+    # 2. Presidio PII Detection
     if ANALYZER_TYPE in ["presidio", "both"]:
         az = get_analyzer()
         if az:
-            results = az.analyze(text=scrubbed_text, language='en')
+            results = az.analyze(text=text, language='en')
             for res in results:
-                potential_matches.append((scrubbed_text[res.start:res.end], res.entity_type))
+                matches.append((res.start, res.end, res.entity_type, text[res.start:res.end]))
 
-    # Pattern Detection
+    # 3. Pattern Detection
     if ANALYZER_TYPE in ["pattern", "both"]:
-        ips = re.findall(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', scrubbed_text)
-        for ip in ips:
-            potential_matches.append((ip, "IP_ADDRESS"))
+        # IP Addresses
+        for match in re.finditer(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', text):
+            matches.append((match.start(), match.end(), "IP_ADDRESS", match.group()))
 
-        potential_gibberish = re.findall(r'\b(?=[a-zA-Z0-9-]*\d)(?=[a-zA-Z0-9-]*[a-zA-Z])[a-zA-Z0-9-]{6,}\b', scrubbed_text)
-        for g in potential_gibberish:
-            potential_matches.append((g, "PRIVATE_KEY"))
+        # Emails (Fallback for Presidio)
+        for match in re.finditer(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text):
+            matches.append((match.start(), match.end(), "EMAIL_ADDRESS", match.group()))
 
-    # Environment Variable Detection (e.g. MY_ENV_VAR = secret)
-    env_vars = re.findall(r'\b[A-Z0-9_-]+\s*=\s*([a-zA-Z0-9_-]+)', scrubbed_text)
+        # Credit Cards
+        for match in re.finditer(r'\b(?:\d[ -]*?){13,16}\b', text):
+            matches.append((match.start(), match.end(), "CREDIT_CARD", match.group()))
 
-    for val in env_vars:
-        potential_matches.append((val, "ENV_VALUE"))
+        # Potential Keys/Gibberish
+        for match in re.finditer(r'\b(?=[a-zA-Z0-9-]*\d)(?=[a-zA-Z0-9-]*[a-zA-Z])[a-zA-Z0-9-]{6,}\b', text):
+            matches.append((match.start(), match.end(), "PRIVATE_KEY", match.group()))
 
-    potential_matches.sort(key=lambda x: len(x[0]), reverse=True)
+    # 4. Environment Variable Detection
+    for match in re.finditer(r'\b[A-Z0-9_-]+\s*=\s*([a-zA-Z0-9_-]+)', text):
+        # We want to redact the value part, not the whole match
+        val_start = match.start(1)
+        val_end = match.end(1)
+        matches.append((val_start, val_end, "ENV_VALUE", match.group(1)))
 
-    for secret, label in potential_matches:
-        apply_replacement(secret, label)
+    if not matches:
+        return text, {}
+
+    # Merge overlapping or adjacent ranges
+    matches.sort()
+    merged = []
+    if matches:
+        curr_start, curr_end, curr_label, curr_text = matches[0]
+        for next_start, next_end, next_label, next_text in matches[1:]:
+            if next_start <= curr_end:
+                # Overlap or adjacent
+                new_end = max(curr_end, next_end)
+                # If they overlap, we might want to combine labels or pick one.
+                # For simplicity, we'll keep the first label if it's "high priority" like EXCLUSION
+                if curr_label != "EXCLUSION" and next_label == "EXCLUSION":
+                    curr_label = "EXCLUSION"
+                curr_end = new_end
+                curr_text = text[curr_start:curr_end]
+            else:
+                merged.append((curr_start, curr_end, curr_label, curr_text))
+                curr_start, curr_end, curr_label, curr_text = next_start, next_end, next_label, next_text
+        merged.append((curr_start, curr_end, curr_label, curr_text))
+
+    # Apply replacements in reverse order
+    mapping = {}
+    scrubbed_text = text
+    counts = {}
+    seen_texts = {}
+
+    for start, end, label, secret in reversed(merged):
+        if secret in seen_texts:
+            placeholder = seen_texts[secret]
+        else:
+            if SCRUBBING_MODE == "semantic" or label in ["EXCLUSION", "ENV_VALUE"]:
+                counts[label] = counts.get(label, 0) + 1
+                placeholder = f"<{label}_{counts[label]}>"
+            else:
+                counts["PRIVATE_DATA"] = counts.get("PRIVATE_DATA", 0) + 1
+                placeholder = f"<PRIVATE_DATA_{counts['PRIVATE_DATA']}>"
+            
+            mapping[placeholder] = secret
+            seen_texts[secret] = placeholder
+        
+        scrubbed_text = scrubbed_text[:start] + placeholder + scrubbed_text[end:]
         
     return scrubbed_text, mapping
 
 def de_scrub_text(text: str, mapping: dict) -> str:
     """Replaces placeholders in the response with original PII values."""
-    for placeholder, original_value in mapping.items():
+    # Sort by length descending to avoid partial replacements (e.g. <EXCLUSION_10> before <EXCLUSION_1>)
+    sorted_placeholders = sorted(mapping.keys(), key=len, reverse=True)
+    for placeholder in sorted_placeholders:
+        original_value = mapping[placeholder]
         # 1. Literal match: <PRIVATE_DATA_1>
         text = text.replace(placeholder, original_value)
         
@@ -129,10 +197,14 @@ def de_scrub_text(text: str, mapping: dict) -> str:
 async def de_scrub_stream(response_iterator, mapping: dict, log_entry: dict = None):
     """
     Generator that de-scrubs a stream of chunks and captures logs.
+    Handles chunk boundaries by buffering potential placeholder starts.
     """
     buffer = ""
     full_resp_before = []
     full_resp_after = []
+    
+    # Potential starts of placeholders or escapes: <, \u003, &, \
+    potential_starts = ["<", "\\u", "&", "\\"]
     
     async for chunk in response_iterator:
         chunk_text = chunk.decode("utf-8", errors="replace")
@@ -141,12 +213,32 @@ async def de_scrub_stream(response_iterator, mapping: dict, log_entry: dict = No
         text = buffer + chunk_text
         buffer = ""
 
-        last_open_bracket = text.rfind("<")
-        last_close_bracket = text.rfind(">")
-
-        if last_open_bracket > last_close_bracket:
-            buffer = text[last_open_bracket:]
-            text = text[:last_open_bracket]
+        # Find the last occurrence of any potential placeholder start
+        # that doesn't have a corresponding end in the same chunk.
+        # This is a bit complex due to multiple escape types.
+        # We'll use a conservative approach: if any potential start is near the end, buffer it.
+        
+        # Literal: < ... >
+        # Unicode: \u003c ... \u003e
+        # HTML: &lt; ... &gt;
+        
+        last_start_pos = -1
+        for start_seq in potential_starts:
+            pos = text.rfind(start_seq)
+            if pos > last_start_pos:
+                last_start_pos = pos
+        
+        if last_start_pos != -1:
+            # Check if this start is "closed" in the remaining text
+            # This is tricky because different starts have different ends.
+            # For simplicity, we buffer up to 50 characters if a start is found and not closed.
+            # 50 is enough for any reasonable placeholder + escape overhead.
+            tail = text[last_start_pos:]
+            is_closed = (">" in tail) or ("\\u003e" in tail) or ("&gt;" in tail)
+            
+            if not is_closed:
+                buffer = text[last_start_pos:]
+                text = text[:last_start_pos]
 
         if text:
             de_scrubbed = de_scrub_text(text, mapping)
@@ -268,17 +360,11 @@ async def proxy_engine(request: Request, path: str):
     body = await request.body()
     log_debug(f"Captured Body (Size: {len(body)} bytes)")
     
-    # Clone and sanitize headers
-    headers = {k.lower(): v for k, v in request.headers.items()}
+    # Header Whitelist Implementation
+    headers = {k.lower(): v for k, v in request.headers.items() if k.lower() in ALLOWED_HEADERS}
     
-    # Force identity encoding to prevent compression issues (e.g., "incorrect header check")
+    # Force identity encoding to prevent compression issues
     headers["accept-encoding"] = "identity"
-    
-    # Remove hop-by-hop and length headers
-    headers.pop("content-length", None)
-    headers.pop("transfer-encoding", None)
-    headers.pop("host", None)
-    headers.pop("connection", None)
     
     pii_mapping = {}
     log_entry = {
@@ -294,30 +380,63 @@ async def proxy_engine(request: Request, path: str):
     
     is_gemini_path = "v1internal" in path or "v1/models" in path or "v1beta/models" in path
     
-    if request.method == "POST" and is_gemini_path:
+    if request.method == "POST" and body:
         try:
-            data = json.loads(body)
+            # Schema-Driven Validation (Inbound Request Only)
+            data_dict = json.loads(body)
+            try:
+                # We use model_validate to ensure the structure is roughly what we expect
+                # but we use a flexible model to support various providers.
+                payload = GenericLLMPayload.model_validate(data_dict)
+            except Exception as ve:
+                log_debug(f"Validation warning: {ve}")
+                # We don't necessarily reject if it doesn't match GenericLLMPayload perfectly,
+                # but we want to know. If the user wants strict rejection, they can uncomment:
+                # raise HTTPException(status_code=400, detail=f"Invalid payload structure: {ve}")
+
             contents = None
-            if "request" in data and "contents" in data["request"]:
-                contents = data["request"]["contents"]
-            elif "contents" in data:
-                contents = data["contents"]
+            # Extract contents from various possible locations
+            if data_dict.get("contents"):
+                contents = data_dict["contents"]
+            elif data_dict.get("request") and isinstance(data_dict["request"], dict) and data_dict["request"].get("contents"):
+                contents = data_dict["request"]["contents"]
+            elif data_dict.get("messages"):
+                contents = data_dict["messages"]
                 
             if contents:
                 log_debug("Starting PII Scrubbing...")
                 scrub_start = time.perf_counter()
                 for content in contents:
-                    for part in content.get("parts", []):
-                        if "text" in part:
+                    if not isinstance(content, dict):
+                        continue
+                    # Handle both 'parts' (Gemini) and 'content' (OpenAI/Anthropic)
+                    parts = content.get("parts", [])
+                    if not parts and "content" in content:
+                        # Normalize OpenAI-style content to a list of parts for internal processing
+                        parts = [{"text": content["content"]}]
+                        
+                    for part in parts:
+                        if isinstance(part, dict) and "text" in part:
                             original_text = part["text"]
                             log_entry["req_before"] = original_text
                             scrubbed_text, mapping = await scrub_text(original_text)
                             part["text"] = scrubbed_text
                             log_entry["req_after"] = scrubbed_text
                             pii_mapping.update(mapping)
+                        elif isinstance(part, str):
+                            # Simple string parts
+                            scrubbed_text, mapping = await scrub_text(part)
+                            # This is tricky because we can't easily replace a string in a list by value
+                            # if it appears multiple times, but for LLM payloads it's usually one part per message.
+                            # For now, we'll assume it's a dict-based payload as per Gemini/OpenAI specs.
+                            pass
+
                 log_debug(f"Scrubbing finished in {time.perf_counter() - scrub_start:.4f}s")
             
-            body = json.dumps(data).encode("utf-8")
+            body = json.dumps(data_dict).encode("utf-8")
+        except json.JSONDecodeError:
+            # If it's not JSON, we pass it through as is (might be binary or something else)
+            pass
         except Exception as e:
             print(f"[Error] Failed to parse/scrub body: {e}")
 

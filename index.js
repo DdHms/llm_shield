@@ -1,5 +1,41 @@
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+
+/**
+ * Verifies the integrity of the native binary.
+ */
+function verifyBinary(binaryPath, binaryName) {
+  const checksumsPath = path.join(__dirname, 'checksums.json');
+  if (!fs.existsSync(checksumsPath)) {
+    console.warn('⚠️ No checksums.json found. Skipping integrity check.');
+    return;
+  }
+
+  const checksums = JSON.parse(fs.readFileSync(checksumsPath, 'utf8'));
+  const expectedHash = checksums[binaryName];
+
+  if (!expectedHash || expectedHash === 'EXPECTED_HASH_HERE') {
+    console.warn(`⚠️ No valid checksum found for ${binaryName}. Skipping integrity check.`);
+    return;
+  }
+
+  const fileBuffer = fs.readFileSync(binaryPath);
+  const hashSum = crypto.createHash('sha256');
+  hashSum.update(fileBuffer);
+  const actualHash = hashSum.digest('hex');
+
+  if (actualHash !== expectedHash) {
+    throw new Error(`
+      🛑 BINARY INTEGRITY CHECK FAILED!
+      File: ${binaryName}
+      Expected Hash: ${expectedHash}
+      Actual Hash:   ${actualHash}
+      
+      This could indicate a compromised binary or a build mismatch.
+    `);
+  }
+}
 
 /**
  * Automates finding and loading the correct native binary for the user's OS.
@@ -22,10 +58,20 @@ function loadBinding() {
   const binaryPath = path.join(__dirname, binaryName);
   const fallbackPath = path.join(__dirname, 'llm-shield.node');
 
+  let chosenPath = '';
+  let chosenName = '';
+
   if (fs.existsSync(binaryPath)) {
-    return require(binaryPath);
+    chosenPath = binaryPath;
+    chosenName = binaryName;
   } else if (fs.existsSync(fallbackPath)) {
-    return require(fallbackPath);
+    chosenPath = fallbackPath;
+    chosenName = 'llm-shield.node';
+  }
+
+  if (chosenPath) {
+    verifyBinary(chosenPath, chosenName);
+    return require(chosenPath);
   } else {
     throw new Error(`
       No compatible native binary found for your system (${platform}-${arch}). 

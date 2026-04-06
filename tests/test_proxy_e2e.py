@@ -2,7 +2,7 @@ import pytest
 import json
 import httpx
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 import sys
 import os
 
@@ -43,7 +43,18 @@ async def test_proxy_scrubs_prompt_and_restores_response():
     }
 
     # Use patch to intercept the outbound httpx call from the proxy
-    with patch("httpx.AsyncClient.send", new_callable=AsyncMock) as mock_send:
+    with patch("httpx.AsyncClient.send", new_callable=AsyncMock) as mock_send, \
+         patch("proxy.get_analyzer") as mock_get_analyzer:
+        
+        # Mock the analyzer result
+        mock_analyzer = MagicMock()
+        mock_result = MagicMock()
+        mock_result.start = 18
+        mock_result.end = 26
+        mock_result.entity_type = "PERSON"
+        mock_analyzer.analyze.return_value = [mock_result]
+        mock_get_analyzer.return_value = mock_analyzer
+
         # Mock the response from Gemini
         mock_response = AsyncMock()
         mock_response.status_code = 200
@@ -54,7 +65,6 @@ async def test_proxy_scrubs_prompt_and_restores_response():
             yield json.dumps(mock_gemini_response).encode("utf-8")
             
         # Use MagicMock for aiter_bytes to return the generator directly
-        from unittest.mock import MagicMock
         mock_response.aiter_bytes = MagicMock(return_value=mock_stream_iterator())
         mock_send.return_value = mock_response
 
