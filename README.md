@@ -9,6 +9,7 @@ A privacy-preserving proxy for Large Language Models (LLMs) that automatically i
 - **🛡️ PII Detection & Redaction**: Uses Microsoft Presidio, Spacy, and custom regex to identify:
     - Standard PII (Names, Emails, Locations, Phone Numbers, etc.)
     - IPv4 Addresses
+    - Environment Variables (e.g., `MY_KEY = secret_value`)
     - Alphanumeric "Gibberish" (6+ characters, mix of letters and numbers)
 - **🌓 Two Scrubbing Modes**:
     - `generic` (Default): Replaces PII with `<PRIVATE_DATA_N>`.

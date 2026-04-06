@@ -60,7 +60,7 @@ async def scrub_text(text: str):
         if not secret or secret in seen_texts:
             return
             
-        if SCRUBBING_MODE == "semantic":
+        if SCRUBBING_MODE == "semantic" or label in ["EXCLUSION", "ENV_VALUE"]:
             counts[label] = counts.get(label, 0) + 1
             placeholder = f"<{label}_{counts[label]}>"
         else:
@@ -98,7 +98,14 @@ async def scrub_text(text: str):
         for g in potential_gibberish:
             potential_matches.append((g, "PRIVATE_KEY"))
 
+    # Environment Variable Detection (e.g. MY_ENV_VAR = secret)
+    env_vars = re.findall(r'\b[A-Z0-9_-]+\s*=\s*([a-zA-Z0-9_-]+)', scrubbed_text)
+
+    for val in env_vars:
+        potential_matches.append((val, "ENV_VALUE"))
+
     potential_matches.sort(key=lambda x: len(x[0]), reverse=True)
+
     for secret, label in potential_matches:
         apply_replacement(secret, label)
         

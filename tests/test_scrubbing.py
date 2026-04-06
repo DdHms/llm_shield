@@ -48,6 +48,7 @@ async def test_scrub_custom_exclusions():
     # Verify custom exclusions are replaced
     assert "my-secret-cluster" not in scrubbed
     assert "internal-service" not in scrubbed
+    assert "<EXCLUSION_1>" in scrubbed
     
     # Verify de-scrubbing restores them
     restored = de_scrub_text(scrubbed, mapping)
@@ -105,9 +106,12 @@ async def test_overlap_exclusion_handling():
     scrubbed, mapping = await scrub_text(text)
     
     # It should replace the long one entirely, not partially
-    assert "<PRIVATE_DATA_1>" in scrubbed
-    assert "-service" not in scrubbed 
-    assert mapping["<PRIVATE_DATA_1>"] == "super-secret-service"
+    assert "<EXCLUSION_1>" in scrubbed
+    assert "-service" not in scrubbed
+    assert mapping["<EXCLUSION_1>"] == "super-secret-service"
+    
+    restored = de_scrub_text(scrubbed, mapping)
+    assert restored == text
 
 @pytest.mark.asyncio
 async def test_api_key_scrubbing():
@@ -119,5 +123,15 @@ async def test_api_key_scrubbing():
     assert "<PRIVATE_DATA_1>" in scrubbed or "<PRIVATE_KEY_1>" in scrubbed
     
     # Verify de-scrubbing restores it
+    restored = de_scrub_text(scrubbed, mapping)
+    assert restored == text
+
+@pytest.mark.asyncio
+async def test_env_var_scrubbing():
+    text = "My secret key is: API_KEY = simple-secret-value"
+    scrubbed, mapping = await scrub_text(text)
+    assert "simple-secret-value" not in scrubbed
+    assert "API_KEY =" in scrubbed
+    assert "<ENV_VALUE_1>" in scrubbed
     restored = de_scrub_text(scrubbed, mapping)
     assert restored == text
