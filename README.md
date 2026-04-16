@@ -27,6 +27,8 @@ A privacy-preserving proxy for Large Language Models (LLMs) that automatically i
 
 The built-in dashboard provides real-time visibility into the scrubbing and de-scrubbing process. You can view original requests, their redacted versions, and how the responses were restored.
 
+> **Note:** To keep the display clean and focused on content, the dashboard automatically filters out internal metadata such as Gemini's `thoughtSignature` from the prettified JSON view.
+
 ![Dashboard Example](images/dashboard.png)
 ![Dashboard Example](images/dashboard2.png)
 

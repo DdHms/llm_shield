@@ -1,3 +1,5 @@
+import time
+
 import httpx
 import json
 import re
@@ -69,13 +71,35 @@ async def scrub_text(text: str):
             
         mapping[placeholder] = secret
         seen_texts[secret] = placeholder
-        scrubbed_text = scrubbed_text.replace(secret, placeholder)
+        
+        # We need to replace exactly this instance of the secret if it was found via Presidio or Patterns
+        # For DEFAULT_EXCLUSIONS, we've already done the replacement using re.sub
+        if secret in scrubbed_text:
+            scrubbed_text = scrubbed_text.replace(secret, placeholder)
 
-    # 1. process Custom Exclusions FIRST
+    # 1. process Custom Exclusions FIRST (Case-Insensitive)
     sorted_exclusions = sorted(DEFAULT_EXCLUSIONS, key=len, reverse=True)
     for excluded in sorted_exclusions:
-        if excluded in scrubbed_text:
-            apply_replacement(excluded, "EXCLUSION")
+        # Use regex to find all case-insensitive matches
+        matches = re.finditer(re.escape(excluded), scrubbed_text, re.IGNORECASE)
+        # Sort matches by start position in reverse to avoid index shifts during replacement
+        # But wait, it's easier to just use re.sub with a callback to capture original text
+        
+        def replacement_callback(match):
+            original_val = match.group(0)
+            label = "EXCLUSION"
+            
+            if original_val in seen_texts:
+                return seen_texts[original_val]
+                
+            counts[label] = counts.get(label, 0) + 1
+            placeholder = f"<{label}_{counts[label]}>"
+            
+            mapping[placeholder] = original_val
+            seen_texts[original_val] = placeholder
+            return placeholder
+
+        scrubbed_text = re.sub(re.escape(excluded), replacement_callback, scrubbed_text, flags=re.IGNORECASE)
 
     # 2. Collect potential matches from subsequent analyzers
     potential_matches = []
@@ -194,6 +218,52 @@ async def get_dashboard():
                 return escaped.replace(/(&lt;[A-Z0-9_-]+&gt;)/g, '<span class="bg-yellow-300 px-1.5 py-0.5 rounded border border-yellow-500 text-black font-bold mx-0.5">$1</span>');
             }
 
+            function extractAndFormatContent(text) {
+                if (!text) return '(Streaming...)';
+                
+                const results = [];
+                function findContent(obj) {
+                    if (!obj || typeof obj !== 'object') return;
+                    if (Array.isArray(obj)) {
+                        obj.forEach(findContent);
+                        return;
+                    }
+                    for (const key in obj) {
+                        if (key === 'content') {
+                            results.push(obj[key]);
+                        } else {
+                            findContent(obj[key]);
+                        }
+                    }
+                }
+
+                // Try parsing as a single JSON or SSE stream
+                // Remove SSE prefixes like "data: "
+                const chunks = text.split(/\\n?data: /);
+                chunks.forEach(chunk => {
+                    const trimmed = chunk.trim();
+                    if (!trimmed || trimmed === '[DONE]') return;
+                    try {
+                        const parsed = JSON.parse(trimmed);
+                        findContent(parsed);
+                    } catch (e) {
+                        // Attempt to extract JSON from mixed text if direct parse fails
+                        const jsonMatch = trimmed.match(/\\{.*\\}/s);
+                        if (jsonMatch) {
+                            try {
+                                findContent(JSON.parse(jsonMatch[0]));
+                            } catch (innerE) {}
+                        }
+                    }
+                });
+
+                if (results.length === 0) return text;
+                // If there's only one content object, show it. If multiple (streaming), show as array.
+                const finalObj = results.length === 1 ? results[0] : results;
+                // Remove bloat like thoughtSignature from the display
+                return JSON.stringify(finalObj, (key, value) => key === 'thoughtSignature' ? undefined : value, 2);
+            }
+
             async function fetchLogs() {
                 const response = await fetch('/api/logs');
                 const allLogs = await response.json();
@@ -212,7 +282,11 @@ async def get_dashboard():
                     container.innerHTML = '<div class="text-center py-12 text-gray-500">No logs yet. Send some requests!</div>';
                     return;
                 }
-                container.innerHTML = logs.map(log => `
+                container.innerHTML = logs.map(log => {
+                    const prettyReceived = highlightPlaceholders(extractAndFormatContent(log.resp_before));
+                    const prettyRestored = extractAndFormatContent(log.resp_after);
+                    
+                    return `
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                         <div class="bg-gray-50 px-6 py-3 border-b border-gray-200 flex justify-between items-center">
                             <span class="font-mono text-sm text-gray-500">${log.timestamp}</span>
@@ -236,18 +310,18 @@ async def get_dashboard():
                                 <h3 class="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wider text-blue-600">Response De-Scrubbing</h3>
                                 <div class="space-y-3 mt-2">
                                     <div class="bg-gray-50 p-3 rounded border border-gray-100">
-                                        <div class="text-[10px] text-gray-400 mb-1 uppercase">Received</div>
-                                        <pre class="text-xs whitespace-pre-wrap break-all">${highlightPlaceholders(log.resp_before) || '(Streaming...)'}</pre>
+                                        <div class="text-[10px] text-gray-400 mb-1 uppercase">Received (Prettified Content)</div>
+                                        <pre class="text-xs whitespace-pre-wrap break-all">${prettyReceived || '(Streaming...)'}</pre>
                                     </div>
                                     <div class="bg-blue-50 p-3 rounded border border-blue-100">
-                                        <div class="text-[10px] text-blue-400 mb-1 uppercase">Restored</div>
-                                        <pre class="text-xs whitespace-pre-wrap break-all font-semibold">${log.resp_after || '(Streaming...)'}</pre>
+                                        <div class="text-[10px] text-blue-400 mb-1 uppercase">Restored (Prettified Content)</div>
+                                        <pre class="text-xs whitespace-pre-wrap break-all font-semibold">${prettyRestored || '(Streaming...)'}</pre>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                `).join('');
+                `}).join('');
             }
             fetchLogs();
             setInterval(fetchLogs, 5000);
@@ -255,6 +329,7 @@ async def get_dashboard():
     </body>
     </html>
     """
+
 
 @app.get("/api/logs")
 async def get_logs():
@@ -297,26 +372,35 @@ async def proxy_engine(request: Request, path: str):
     if request.method == "POST" and is_gemini_path:
         try:
             data = json.loads(body)
-            contents = None
-            if "request" in data and "contents" in data["request"]:
-                contents = data["request"]["contents"]
-            elif "contents" in data:
-                contents = data["contents"]
-                
-            if contents:
-                log_debug("Starting PII Scrubbing...")
-                scrub_start = time.perf_counter()
-                for content in contents:
-                    for part in content.get("parts", []):
-                        if "text" in part:
-                            original_text = part["text"]
-                            log_entry["req_before"] = original_text
-                            scrubbed_text, mapping = await scrub_text(original_text)
-                            part["text"] = scrubbed_text
-                            log_entry["req_after"] = scrubbed_text
-                            pii_mapping.update(mapping)
-                log_debug(f"Scrubbing finished in {time.perf_counter() - scrub_start:.4f}s")
+            log_entry["req_before"] = json.dumps(data, indent=2)
             
+            log_debug("Starting Recursive PII Scrubbing...")
+            scrub_start = time.perf_counter()
+            
+            async def scrub_recursive(obj, in_tool=False):
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        # Track if we are inside a tool result object
+                        current_in_tool = in_tool or k in ("functionResponse", "toolResult", "function_response", "tool_response")
+                        
+                        if k == "text" and isinstance(v, str):
+                            scrubbed, mapping = await scrub_text(v)
+                            obj[k] = scrubbed
+                            pii_mapping.update(mapping)
+                        elif current_in_tool and isinstance(v, str) and k not in ("name", "id", "type"):
+                            scrubbed, mapping = await scrub_text(v)
+                            obj[k] = scrubbed
+                            pii_mapping.update(mapping)
+                        else:
+                            await scrub_recursive(v, current_in_tool)
+                elif isinstance(obj, list):
+                    for item in obj:
+                        await scrub_recursive(item, in_tool)
+
+            await scrub_recursive(data)
+            log_debug(f"Scrubbing finished in {time.perf_counter() - scrub_start:.4f}s")
+            
+            log_entry["req_after"] = json.dumps(data, indent=2)
             body = json.dumps(data).encode("utf-8")
         except Exception as e:
             print(f"[Error] Failed to parse/scrub body: {e}")
