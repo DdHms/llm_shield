@@ -6,8 +6,9 @@ import asyncio
 # Add the root directory to the path so we can import modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from shielding import scrub_text
-import constants
+from src.shielding import scrub_text
+from src import constants
+
 
 @pytest.mark.asyncio
 async def test_word_boundary_fixed():

@@ -8,8 +8,8 @@ import os
 # Add root directory to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import constants
-from proxy import app
+from src import constants
+from src.proxy import app
 
 client = TestClient(app)
 

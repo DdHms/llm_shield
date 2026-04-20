@@ -6,8 +6,8 @@ import sys
 # Add root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import constants
-from shielding import scrub_text, get_analyzer
+from src import constants
+from src.shielding import scrub_text, get_analyzer
 
 # Use concatenation to avoid environment-level scrubbing of the prompt data
 p_part1 = "127." + "0." + "0.1"

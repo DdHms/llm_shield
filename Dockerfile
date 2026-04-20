@@ -27,5 +27,5 @@ ENV SCRUBBING_MODE=$SCRUBBING_MODE
 # Target LLM provider (default: Google Cloud Code)
 ENV TARGET_URL="https://cloudcode-pa.googleapis.com"
 
-COPY proxy.py .
+COPY src/proxy.py .
 CMD ["python", "proxy.py"]
