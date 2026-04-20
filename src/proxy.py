@@ -77,13 +77,30 @@ async def proxy_engine(request: Request, path: str):
         "resp_before": "",
         "resp_after": ""
     }
-    
-    is_gemini_path = "google.ai.generativelanguage" in path or "v1/models" in path or "v1beta/models" in path
-    
-    if request.method == "POST" and is_gemini_path:
+
+    # Capture all POST JSON bodies for logging, even if not a "Gemini path" for scrubbing
+    if request.method == "POST":
         try:
             data = json.loads(body)
             log_entry["req_before"] = json.dumps(data, indent=2)
+            log_entry["req_after"] = log_entry["req_before"]
+        except (json.JSONDecodeError, Exception):
+            pass
+    
+    # Paths that should be subjected to recursive PII scrubbing
+    is_gemini_path = (
+        "google.ai.generativelanguage" in path or 
+        "v1/models" in path or 
+        "v1beta/models" in path or
+        "v1/projects" in path or
+        "v1beta/projects" in path or
+        "cloudaicompanion.googleapis.com" in path
+    )
+    
+    if request.method == "POST" and is_gemini_path:
+        try:
+            # Re-parse body from log_entry to ensure we have the dictionary for scrubbing
+            data = json.loads(log_entry["req_before"])
             
             constants.log_debug("Starting Recursive PII Scrubbing...")
             scrub_start = time.perf_counter()
