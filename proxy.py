@@ -316,8 +316,10 @@ async def get_dashboard():
                 if (results.length === 0) return text;
                 // If there's only one content object, show it. If multiple (streaming), show as array.
                 const finalObj = results.length === 1 ? results[0] : results;
-                // Remove bloat like thoughtSignature from the display
-                return JSON.stringify(finalObj, (key, value) => key === 'thoughtSignature' ? undefined : value, 2);
+                // Remove bloat like thoughtSignature and large base64 inlineData from the display
+                return JSON.stringify(finalObj, (key, value) => 
+                    (key === 'thoughtSignature' || key === 'inlineData') ? undefined : value, 
+                2);
             }
 
             async function fetchLogs() {
