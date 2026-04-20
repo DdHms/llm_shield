@@ -30,7 +30,7 @@ ENV TARGET_URL="https://cloudcode-pa.googleapis.com"
 # Copy all source files
 COPY src/ ./src/
 
-# Set PYTHONPATH to include src directory so internal imports work
-ENV PYTHONPATH="/app/src"
+# Set PYTHONPATH to include /app so that "from src import ..." works
+ENV PYTHONPATH="/app"
 
 CMD ["python", "src/proxy.py"]
