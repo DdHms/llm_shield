@@ -88,11 +88,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install -r requirements.txt pyinstaller pytest pytest-asyncio httpx fastapi
+
+      - name: Run Tests
+        run: |
+          pytest tests/test_scrubbing.py tests/test_case_insensitive_exclusions.py tests/test_fix_overscrubbing.py tests/test_live_exclusions.py
 
       - name: Build with PyInstaller
         run: |
-          pyinstaller --onefile --windowed --name "LLMShield" proxy.py
+          pyinstaller --onefile --windowed --name "LLMShield" --add-data "src/dashboard.html:src" src/proxy.py
 
       - name: Rename binary
         shell: bash

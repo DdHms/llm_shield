@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12
 
 WORKDIR /app
 
@@ -27,5 +27,10 @@ ENV SCRUBBING_MODE=$SCRUBBING_MODE
 # Target LLM provider (default: Google Cloud Code)
 ENV TARGET_URL="https://cloudcode-pa.googleapis.com"
 
-COPY src/proxy.py .
-CMD ["python", "proxy.py"]
+# Copy all source files
+COPY src/ ./src/
+
+# Set PYTHONPATH to include src directory so internal imports work
+ENV PYTHONPATH="/app/src"
+
+CMD ["python", "src/proxy.py"]
