@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Privacy Proxy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+        }
+        .sidebar { background-color: #1a1a1a; }
+        .input-bar { background-color: #212121; }
+        
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #121212; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #333; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555; 
+        }
+    </style>
+</head>
+<body class="h-screen w-full flex overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="w-64 sidebar flex flex-col h-full border-r border-white/5 transition-all duration-300">
+        <div class="p-4 flex items-center mb-2">
+            <div class="w-8 h-8 bg-white text-black rounded-lg flex items-center justify-center font-bold text-xl mr-3 shadow-md">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            </div>
+        </div>
+        
+        <nav class="flex-1 px-3 space-y-1 mt-2">
+            <button onclick="switchTab('chat', this)" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-white/70 hover:bg-white/10 rounded-lg transition-colors bg-white/10 font-medium">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                New Chat
+            </button>
+            <button onclick="switchTab('logs', this)" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-white/70 hover:bg-white/10 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                Logs
+            </button>
+            <div class="pt-4 pb-2">
+                <p class="px-3 text-xs font-semibold text-white/40 uppercase tracking-wider">Settings</p>
+            </div>
+            <button onclick="switchTab('settings', this)" class="nav-btn w-full flex items-center gap-3 px-3 py-2 text-sm text-white/70 hover:bg-white/10 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                Settings & Exclusions
+            </button>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col relative bg-[#121212]">
+        <!-- Top bar -->
+        <header class="absolute top-0 right-0 w-full p-4 flex items-center justify-start pointer-events-none z-10 pl-6 pt-5">
+            <div class="flex items-center gap-3 bg-[#1e1e1e] border border-white/10 rounded-xl px-4 py-2 pointer-events-auto shadow-md backdrop-blur-sm text-white/80 hover:bg-white/5 transition duration-200 cursor-pointer">
+                <svg class="w-4 h-4 text-[#22c55e]" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+                <span class="text-sm font-medium text-white" id="model-name-display">Privacy Proxy Active</span>
+                <svg class="w-3.5 h-3.5 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                <div class="h-4 w-px bg-white/20 mx-1"></div>
+                <svg class="w-4 h-4 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                <div class="w-2 h-2 bg-green-500 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.8)] ml-1"></div>
+            </div>
+        </header>
+
+        <!-- Chat View section -->
+        <section id="view-chat" class="flex-1 flex flex-col justify-center items-center p-4">
+            <h1 class="text-[32px] font-semibold mb-8 text-white tracking-tight">How can I help you today?</h1>
+            <div class="w-full max-w-2xl input-bar rounded-2xl flex items-center p-2 border border-white/10 shadow-2xl transition-all focus-within:border-white/30 focus-within:bg-[#282828] focus-within:ring-white/20">
+                <div class="flex items-center gap-1 pl-2">
+                    <button class="p-2 text-white/50 hover:text-white transition rounded-full hover:bg-white/5 disabled:opacity-50">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    </button>
+                    <button class="p-2 text-white/50 hover:text-white transition rounded-full hover:bg-white/5 disabled:opacity-50">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                    </button>
+                </div>
+                <input type="text" class="flex-1 bg-transparent border-none text-white focus:outline-none px-4 py-3 placeholder-white/30 text-[15px]" placeholder="Message...">
+                <button class="p-2 bg-white text-black rounded-full hover:bg-white/90 transition shadow-md w-9 h-9 flex items-center justify-center mr-1 disabled:opacity-50">
+                    <svg class="w-4 h-4 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                </button>
+            </div>
+            <p class="text-xs text-white/40 mt-4 h-4">Currently operating as a privacy proxy. Chat UI is illustrative only.</p>
+        </section>
+
+        <!-- Logs View section -->
+        <section id="view-logs" class="flex-1 overflow-y-auto p-8 pt-24 hidden">
+            <div class="max-w-5xl mx-auto">
+                <div class="flex items-center justify-between mb-8">
+                    <h2 class="text-2xl font-bold text-white flex items-center gap-3">
+                        <svg class="w-6 h-6 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                        Request Logs
+                    </h2>
+                    <div class="flex items-center gap-5">
+                        <label class="flex items-center gap-2 text-sm text-white/50 cursor-pointer hover:text-white transition group">
+                            <div class="relative flex items-center justify-center">
+                                <input type="checkbox" id="shielded-filter" onchange="lastLogsHash = ''; fetchLogs()" class="peer appearance-none w-5 h-5 border border-white/20 rounded bg-[#1a1a1a] checked:bg-white checked:border-transparent transition-colors cursor-pointer">
+                                <svg class="absolute w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>
+                            </div>
+                            <span class="select-none font-medium">Only Shielded</span>
+                        </label>
+                        <button onclick="fetchLogs()" class="text-sm bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition border border-white/5 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+                <div id="logs-container" class="space-y-6"></div>
+            </div>
+        </section>
+
+        <!-- Settings View section -->
+        <section id="view-settings" class="flex-1 overflow-y-auto p-8 pt-24 hidden">
+            <div class="max-w-2xl mx-auto">
+                <h2 class="text-2xl font-bold mb-8 text-white flex items-center gap-3">
+                    <svg class="w-6 h-6 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    Settings & Exclusions
+                </h2>
+                
+                <div class="bg-[#1a1a1a] p-7 rounded-2xl border border-white/5 shadow-lg">
+                    <h3 class="text-lg font-medium text-white mb-2">Custom Exclusions</h3>
+                    <p class="text-sm text-white/40 mb-6">Add specific phrases, IDs, or project names that should be automatically redacted from requests before being sent to the LLM.</p>
+                    
+                    <div class="flex gap-4 mb-8">
+                        <input type="text" id="new-exclusion" placeholder="Add a phrase to exclude..." 
+                               class="flex-1 bg-[#242424] border border-white/10 text-white px-4 py-3 rounded-xl focus:outline-none focus:border-white/30 focus:shadow-[0_0_0_1px_rgba(255,255,255,0.1)] transition-all">
+                        <button onclick="addExclusion()" class="bg-white text-black font-semibold px-6 py-3 rounded-xl hover:bg-white/90 transition-colors shadow-md">Add Rule</button>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <h4 class="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">Active Rules</h4>
+                        <div id="exclusions-list" class="flex flex-wrap gap-2 min-h-[50px] p-4 bg-[#121212] rounded-xl border border-white/5">
+                            <!-- Dynamic exclusions go here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // UI Tab Switching logic
+        function switchTab(tabId, btnElement) {
+            document.querySelectorAll('section[id^="view-"]').forEach(el => el.classList.add('hidden'));
+            document.getElementById('view-' + tabId).classList.remove('hidden');
+            
+            // Update active state in nav
+            if(btnElement) {
+                document.querySelectorAll('.nav-btn').forEach(btn => {
+                    btn.classList.remove('bg-white/10', 'font-medium');
+                });
+                btnElement.classList.add('bg-white/10', 'font-medium');
+            }
+        }
+
+        async function fetchExclusions() {
+            const response = await fetch('/api/config');
+            const config = await response.json();
+            const container = document.getElementById('exclusions-list');
+            
+            if (config.exclusions.length === 0) {
+                container.innerHTML = '<span class="text-sm text-white/40 italic">No custom exclusions defined.</span>';
+                return;
+            }
+            
+            container.innerHTML = config.exclusions.map(ex => `
+                <span class="inline-flex items-center bg-[#1e1e1e] text-white/70 text-sm px-3 py-1.5 rounded-lg border border-white/10 shadow-sm group hover:border-white/20 transition-all">
+                    <span class="mr-2 font-mono text-xs text-white/40">#</span>
+                    ${ex}
+                    <button onclick="removeExclusion('${ex}')" class="ml-3 text-white/40 hover:text-red-400 hover:bg-red-400/10 p-0.5 rounded-md transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </span>
+            `).join('');
+        }
+
+        async function addExclusion() {
+            const input = document.getElementById('new-exclusion');
+            const phrase = input.value.trim();
+            if (!phrase) return;
+
+            const response = await fetch('/api/exclusions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phrase })
+            });
+
+            if (response.ok) {
+                input.value = '';
+                fetchExclusions();
+            }
+        }
+
+        async function removeExclusion(phrase) {
+            const response = await fetch(`/api/exclusions/${encodeURIComponent(phrase)}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                fetchExclusions();
+            }
+        }
+
+        function highlightPlaceholders(text) {
+            if (!text) return text;
+            const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return escaped.replace(/(&lt;[A-Z0-9_-]+&gt;)/g, '<span class="bg-[#2a2a2a] text-[#3b82f6] px-1.5 py-0.5 rounded border border-[#3b82f6]/30 font-mono text-[11px] mx-0.5 shadow-sm">$1</span>');
+        }
+
+        function extractTextContent(text) {
+            if (!text) return '(Empty)';
+            const results = [];
+            function findContent(obj) {
+                if (!obj || typeof obj !== 'object') return;
+                if (Array.isArray(obj)) {
+                    obj.forEach(findContent);
+                    return;
+                }
+                if (obj.hasOwnProperty('text') && typeof obj.text === 'string') {
+                    results.push(obj.text);
+                } else if (obj.hasOwnProperty('content') && typeof obj.content === 'string') {
+                    results.push(obj.content);
+                } else {
+                    for (const key in obj) {
+                        findContent(obj[key]);
+                    }
+                }
+            }
+            const chunks = text.split(/\n?data: /);
+            chunks.forEach(chunk => {
+                const trimmed = chunk.trim();
+                if (!trimmed || trimmed === '[DONE]') return;
+                try {
+                    findContent(JSON.parse(trimmed));
+                } catch (e) {
+                    try {
+                        const jsonMatch = trimmed.match(/\{.*}/s);
+                        if (jsonMatch) {
+                            findContent(JSON.parse(jsonMatch[0]));
+                        }
+                    } catch (err) {}
+                }
+            });
+
+            if (results.length > 0) {
+                return results.join('\n\n').trim();
+            }
+            return text;
+        }
+
+        let lastLogsHash = '';
+
+        async function fetchLogs() {
+            const response = await fetch('/api/logs');
+            const allLogs = await response.json();
+            
+            let logs = allLogs.filter(log => 
+                log.resp_before && (
+                    log.resp_before.toLowerCase().includes('"content"') || 
+                    log.resp_before.toLowerCase().includes('"parts"') ||
+                    log.resp_before.toLowerCase().includes('"text"')
+                )
+            );
+
+            const filterShielded = document.getElementById('shielded-filter').checked;
+            if (filterShielded) {
+                const shieldRegex = /<(PRIVATE|GIBBERISH|IP_ADDRESS|PERSON|EMAIL|ENV_VALUE|EXCLUSION)_/i;
+                logs = logs.filter(log => {
+                    return (log.req_after && shieldRegex.test(log.req_after)) || 
+                           (log.resp_before && shieldRegex.test(log.resp_before));
+                });
+            }
+
+            const logsStr = JSON.stringify(logs);
+            if (logsStr === lastLogsHash) return;
+            lastLogsHash = logsStr;
+
+            const scrollStates = new Map();
+            document.querySelectorAll('[data-scroll-id]').forEach(el => {
+                scrollStates.set(el.getAttribute('data-scroll-id'), { top: el.scrollTop, left: el.scrollLeft });
+            });
+
+            const container = document.getElementById('logs-container');
+            if (logs.length === 0) {
+                container.innerHTML = `
+                <div class="text-center py-16 bg-[#1a1a1a] rounded-2xl border border-white/5 border-dashed">
+                    <svg class="w-12 h-12 text-white/10 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <p class="text-white/50 font-medium">No intercepted requests yet</p>
+                    <p class="text-sm text-white/40 mt-1">Make a request through the proxy to see logs here.</p>
+                </div>`;
+                return;
+            }
+            
+            container.innerHTML = logs.map(log => {
+                const prettyReqBefore = extractTextContent(log.req_before) || '(None/Static)';
+                const prettyReqAfter = highlightPlaceholders(extractTextContent(log.req_after)) || '(None/Static)';
+                const prettyReceived = highlightPlaceholders(extractTextContent(log.resp_before)) || '(Streaming...)';
+                const prettyRestored = highlightPlaceholders(extractTextContent(log.resp_after)) || '(Streaming...)';
+                
+                return `
+                <div class="bg-[#1a1a1a] rounded-2xl border border-white/5 overflow-hidden shadow-lg transition-transform hover:border-white/10">
+                    <div class="bg-[#242424] px-5 py-3 border-b border-white/5 flex justify-between items-center">
+                        <div class="flex items-center gap-3">
+                            <span class="px-2.5 py-1 rounded-md text-[10px] font-bold bg-white/10 text-white uppercase tracking-wider">${log.method} ${log.path.split('/').pop()}</span>
+                            <span class="font-mono text-[11px] text-white/40">${log.timestamp}</span>
+                        </div>
+                    </div>
+                    <div class="p-5 grid grid-cols-1 xl:grid-cols-2 gap-5">
+                        <div>
+                            <h3 class="text-[11px] font-bold text-white/40 mb-3 uppercase tracking-wider flex items-center gap-2">
+                                <svg class="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                                Request Scrubbing
+                            </h3>
+                            <div class="space-y-4">
+                                <div class="bg-[#121212] p-3.5 rounded-xl border border-white/5">
+                                    <div class="text-[10px] text-white/40 mb-2 uppercase tracking-wide font-semibold">Original Prompt</div>
+                                    <pre data-scroll-id="${log.id}-req-before" class="text-[13px] text-white/70 whitespace-pre-wrap break-all font-mono leading-relaxed max-h-[250px] overflow-y-auto">${prettyReqBefore}</pre>
+                                </div>
+                                <div class="bg-[#1e1e1e] p-3.5 rounded-xl border border-blue-500/20">
+                                    <div class="text-[10px] text-blue-400 mb-2 uppercase tracking-wide font-semibold">Scrubbed (Sent to LLM)</div>
+                                    <pre data-scroll-id="${log.id}-req-after" class="text-[13px] text-blue-50/90 whitespace-pre-wrap break-all font-mono leading-relaxed max-h-[250px] overflow-y-auto">${prettyReqAfter}</pre>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 class="text-[11px] font-bold text-white/40 mb-3 uppercase tracking-wider flex items-center gap-2">
+                                <svg class="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+                                Response Processing
+                            </h3>
+                            <div class="space-y-4">
+                                <div class="bg-[#121212] p-3.5 rounded-xl border border-white/5">
+                                    <div class="text-[10px] text-white/40 mb-2 uppercase tracking-wide font-semibold">Received from LLM</div>
+                                    <pre data-scroll-id="${log.id}-resp-before" class="text-[13px] text-white/70 whitespace-pre-wrap break-all font-mono leading-relaxed max-h-[250px] overflow-y-auto">${prettyReceived}</pre>
+                                </div>
+                                <div class="bg-[#1e1e1e] p-3.5 rounded-xl border border-green-500/20">
+                                    <div class="text-[10px] text-green-400 mb-2 uppercase tracking-wide font-semibold">Restored (Sent to Client)</div>
+                                    <pre data-scroll-id="${log.id}-resp-after" class="text-[13px] text-green-50/90 whitespace-pre-wrap break-all font-mono leading-relaxed max-h-[250px] overflow-y-auto">${prettyRestored}</pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `}).join('');
+
+            document.querySelectorAll('[data-scroll-id]').forEach(el => {
+                const state = scrollStates.get(el.getAttribute('data-scroll-id'));
+                if (state) {
+                    el.scrollTop = state.top;
+                    el.scrollLeft = state.left;
+                }
+            });
+        }
+        fetchLogs();
+        fetchExclusions();
+        setInterval(fetchLogs, 5000);
+        
+        // Listen for enter on input
+        document.getElementById('new-exclusion').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') addExclusion();
+        });
+    </script>
+</body>
+</html>
