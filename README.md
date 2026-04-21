@@ -25,19 +25,23 @@ A privacy-preserving proxy for Large Language Models (LLMs) that automatically i
 
 ## 📊 Monitoring
 
-The built-in dashboard provides real-time visibility into the scrubbing and de-scrubbing process. You can view original requests, their redacted versions, and how the responses were restored.
+The built-in dashboard provides real-time visibility into the scrubbing and de-scrubization process.
+
+- **Activity Feed**: View original requests, their redacted versions, and how the responses were restored.
+- **Filters**: Use the "Only Shielded" filter to focus exclusively on traffic that contained PII and was redacted.
+- **Settings & Exclusions**: A dedicated tab to manage your configuration in real-time.
+- **Dynamic Updates**: Update your PII exclusions and scrubbing settings directly through the dashboard. These changes take effect immediately without needing to restart the proxy.
 
 > **Note:** To keep the display clean and focused on content, the dashboard automatically filters out internal metadata such as Gemini's `thoughtSignature` from the prettified JSON view.
 
 ![Dashboard Example](images/dashboard.png)
-![Dashboard Example](images/settings.png)
-
+![Settings Example](images/settings.png)
 
 ---
 
 ## ⚙️ Configuration
 
-LLM Shield is configured using Environment Variables.
+LLM Shield is configured using Environment Variables. You can also update these dynamically via the Dashboard.
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
@@ -55,21 +59,17 @@ LLM Shield is configured using Environment Variables.
 Choose the method that best fits your workflow.
 
 ### 1. Standalone Native App (Easiest)
-Download a single executable that includes everything you need. No Python, Node, or Rust installation required.
+Download a single executable or installer that includes everything you need. No Python, Node, or Rust installation required.
 
-1.  **Download**: Go to the [Releases](https://github.com/Ddyedidya/llm-shield/releases) page and download the binary for your OS:
-    *   `LLMShield-windows.exe` (Windows)
-    *   `LLMShield-macos-silicon` (Apple Silicon M1/M2/M3)
-    *   `LLMShield-macos-intel` (Intel Mac)
-    *   `LLMShield-linux` (Linux)
-2.  **Permissions (Mac/Linux only)**: Open your terminal and grant execution permission:
-    ```bash
-    chmod +x LLMShield-macos-silicon
-    ```
-3.  **Run**: Double-click the file (Windows) or run from terminal:
-    ```bash
-    ./LLMShield-macos-silicon
-    ```
+1.  **Download**: Go to the [Releases](https://github.com/Ddyedidya/llm-shield/releases) page and download the version for your OS:
+    *   `LLMShield.dmg` (macOS Installer - **Recommended**)
+    *   `LLMShield-macos-silicon` (Apple Silicon M1/M2/M3 Binary)
+    *   `LLMShield-macos-intel` (Intel Mac Binary)
+    *   `LLMShield-windows.exe` (Windows Binary)
+    *   `LLMShield-linux` (Linux Binary)
+2.  **Run**: 
+    *   **macOS (.dmg)**: Open the dmg and drag LLM Shield to your Applications folder.
+    *   **Binaries**: Grant execution permission (`chmod +x LLMShield-...`) and run from your terminal.
 
 ### 2. Docker (Recommended for Servers)
 The most portable way to run the shield, especially in headless or cloud environments.
@@ -89,17 +89,9 @@ npm start
 
 ---
 
-## ⚙️ Usage & Configuration
+## ⚙️ Usage
 
-Regardless of how you installed the shield, you can configure its behavior using Environment Variables.
-
-### Common Configuration Options
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `DEFAULT_EXCLUSIONS` | `""` | Comma-separated list of strings to ALWAYS redact. |
-| `ANALYZER_TYPE` | `pattern` | `pattern` (Fast Regex), `presidio` (Deep NLP), or `both`. |
-| `SCRUBBING_MODE` | `generic` | `generic` (redact as `<PRIVATE_DATA>`) or `semantic` (redact by label). |
-| `HEADLESS` | `false` | Set to `true` to skip launching the GUI window. |
+Regardless of how you installed the shield, you can configure its initial behavior using Environment Variables.
 
 ### Running with Variables
 
@@ -140,6 +132,9 @@ If you want to modify the Rust or Python code:
 
 ### Build from Source
 **Prerequisites:** Node.js (v22+), Rust & Cargo, Python 3.10+.
+
+The source code is located in the `src/` directory.
+
 ```bash
 npm install
 npm run build
