@@ -214,7 +214,17 @@
 
             function highlightPlaceholders(text) {
                 if (!text) return text;
-                const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+                // 1. First, handle the special Unicode escapes if they exist as literal strings
+                // 2. Escape standard HTML characters for security
+                const escaped = text
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/\\u003c/gi, '&lt;') // Convert \u003c to &lt;
+                    .replace(/\\u003e/gi, '&gt;'); // Convert \u003e to &gt;
+
+                // 3. Highlight the pattern
                 return escaped.replace(/(&lt;[A-Z0-9_-]+&gt;)/g, '<span class="bg-[#3d3119] text-[#ffd666] px-1.5 py-0.5 rounded border border-[#ffd666]/30 font-mono text-[11px] mx-0.5 shadow-sm">$1</span>');
             }
 
