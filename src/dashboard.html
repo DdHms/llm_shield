@@ -297,8 +297,57 @@
 
             function highlightPlaceholders(text) {
                 if (!text) return text;
-                const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+                // 1. First, handle the special Unicode escapes if they exist as literal strings
+                // 2. Escape standard HTML characters for security
+                const escaped = text
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/\\u003c/gi, '&lt;') // Convert \u003c to &lt;
+                    .replace(/\\u003e/gi, '&gt;'); // Convert \u003e to &gt;
+
+                // 3. Highlight the pattern
                 return escaped.replace(/(&lt;[A-Z0-9_-]+&gt;)/g, '<span class="bg-[#3d3119] text-[#ffd666] px-1.5 py-0.5 rounded border border-[#ffd666]/30 font-mono text-[11px] mx-0.5 shadow-sm">$1</span>');
+            }
+
+            const bloatKeys = ['thoughtSignature', 'inlineData'];
+
+            function scrubJSON(text) {
+                if (!text) return text;
+
+                // Regex-based fallback to remove thoughtSignature and inlineData even if JSON parsing fails
+                // This handles cases where chunks might be partial or invalid JSON
+                let scrubbedText = text;
+                try {
+                    scrubbedText = scrubbedText.replace(/"thoughtSignature"\s*:\s*"[^"]*"\s*,?/g, '');
+                    scrubbedText = scrubbedText.replace(/"inlineData"\s*:\s*\{[^}]*\}\s*,?/g, '');
+                    // Clean up trailing commas that might remain after removal
+                    scrubbedText = scrubbedText.replace(/,\s*}/g, '}').replace(/{\s*,/g, '{');
+                } catch (e) {}
+
+                const chunks = scrubbedText.split(/\n?data: /);
+                const scrubbedChunks = chunks.map(chunk => {
+                    const trimmed = chunk.trim();
+                    if (!trimmed || trimmed === '[DONE]') return chunk;
+                    try {
+                        const obj = JSON.parse(trimmed);
+                        const clean = (item) => {
+                            if (!item || typeof item !== 'object') return item;
+                            if (Array.isArray(item)) return item.map(clean);
+                            const newObj = {};
+                            for (const key in item) {
+                                if (bloatKeys.includes(key)) continue;
+                                newObj[key] = clean(item[key]);
+                            }
+                            return newObj;
+                        };
+                        return JSON.stringify(clean(obj));
+                    } catch (e) {
+                        return chunk;
+                    }
+                });
+                return scrubbedChunks.join('\\ndata: ');
             }
 
             function extractAndFormatContent(text) {
@@ -312,6 +361,7 @@
                         return;
                     }
                     for (const key in obj) {
+                        if (bloatKeys.includes(key)) continue;
                         if (key === 'content') {
                             results.push(obj[key]);
                         } else {
@@ -340,11 +390,11 @@
                     }
                 });
 
-                if (results.length === 0) return text;
+                if (results.length === 0) return scrubJSON(text);
                 // If there's only one content object, show it. If multiple (streaming), show as array.
                 const finalObj = results.length === 1 ? results[0] : results;
-                // Remove bloat like thoughtSignature from the display
-                return JSON.stringify(finalObj, (key, value) => key === 'thoughtSignature' ? undefined : value, 2);
+                // Remove bloat like thoughtSignature and inlineData from the display
+                return JSON.stringify(finalObj, (key, value) => bloatKeys.includes(key) ? undefined : value, 2);
             }
 
             function extractTextContent(text) {
@@ -362,6 +412,7 @@
                         results.push(obj.content);
                     } else {
                         for (const key in obj) {
+                            if (bloatKeys.includes(key)) continue;
                             findContent(obj[key]);
                         }
                     }
@@ -385,7 +436,7 @@
                 if (results.length > 0) {
                     return results.join('\\n\\n').trim();
                 }
-                return text;
+                return scrubJSON(text);
             }
 
             function extractUniqueStructure(text) {
@@ -396,10 +447,10 @@
     function findContent(obj, path = []) {
         if (!obj || typeof obj !== 'object') return;
 
-        // 1. Scrub thoughtSignature
-        if (obj.hasOwnProperty('thoughtSignature')) {
-            delete obj.thoughtSignature;
-        }
+        // 1. Scrub bloat using global bloatKeys
+        bloatKeys.forEach(key => {
+            if (obj.hasOwnProperty(key)) delete obj[key];
+        });
 
         if (Array.isArray(obj)) {
             obj.forEach((item, index) => findContent(item, [...path, index.toString()]));
@@ -473,17 +524,14 @@
                 const response = await fetch('/api/logs');
                 const allLogs = await response.json();
                 
-                let logs = allLogs.filter(log => 
-                    log.resp_before && (
-                        log.resp_before.toLowerCase().includes('"content"') || 
-                        log.resp_before.toLowerCase().includes('"parts"') ||
-                        log.resp_before.toLowerCase().includes('"text"')
-                    )
-                );
+                // Show all logs that have either a request or a response body
+                let logs = allLogs.filter(log => log.req_before || log.resp_before);
 
                 const filterShielded = document.getElementById('shielded-filter').checked;
                 if (filterShielded) {
-                    const shieldRegex = /<(PRIVATE|GIBBERISH|IP_ADDRESS|PERSON|EMAIL|ENV_VALUE|EXCLUSION)_/i;
+                    // Robust regex for placeholders, handling literal <, Unicode \u003c, and HTML &lt;
+                    // Includes common labels like PRIVATE_DATA, EXCLUSION, PERSON, EMAIL, etc.
+                    const shieldRegex = /(?:<|\\u003c|&lt;)(?:PRIVATE|EXCLUSION|ENV_VALUE|IP_ADDRESS|PERSON|EMAIL|LOCATION|PHONE|PRIVATE_KEY|GIBBERISH)_/i;
                     logs = logs.filter(log => {
                         return (log.req_after && shieldRegex.test(log.req_after)) || 
                                (log.resp_before && shieldRegex.test(log.resp_before));
@@ -513,8 +561,8 @@
                 container.innerHTML = logs.map(log => {
                     const prettyReqBefore = highlightPlaceholders(extractTextContent(log.req_before)) || '(None/Static)';
                     const prettyReqAfter = highlightPlaceholders(extractTextContent(log.req_after)) || '(None/Static)';
-                    const prettyReceived = highlightPlaceholders(extractTextContent(log.resp_before)) || '(Streaming...)';
-                    const prettyRestored = highlightPlaceholders(extractTextContent(log.resp_after)) || '(Streaming...)';
+                    const prettyReceived = highlightPlaceholders(extractAndFormatContent(log.resp_before)) || '(Streaming...)';
+                    const prettyRestored = highlightPlaceholders(extractAndFormatContent(log.resp_after)) || '(Streaming...)';
                     
                     return `
                     <div class="bg-[#1a1a1a] rounded-2xl border border-white/5 overflow-hidden shadow-lg transition-transform hover:border-white/10">
