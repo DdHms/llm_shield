@@ -1,8 +1,29 @@
 import re
 from src import constants
-from src.constants import ANALYZER_TYPE, EXCLUSIONS_LOCK, DEFAULT_EXCLUSIONS, SCRUBBING_MODE
 
 analyzer = None
+
+PLACEHOLDER_RE = re.compile(r"<[A-Z_]+_\d+>")
+
+
+def exclusion_pattern(excluded: str):
+    escaped = re.escape(excluded)
+    if re.fullmatch(r"\w+", excluded):
+        return rf"\b{escaped}\b"
+    return escaped
+
+
+def replace_outside_placeholders(text: str, pattern: str, callback):
+    parts = []
+    last_end = 0
+    for placeholder_match in PLACEHOLDER_RE.finditer(text):
+        segment = text[last_end:placeholder_match.start()]
+        parts.append(re.sub(pattern, callback, segment, flags=re.IGNORECASE))
+        parts.append(placeholder_match.group(0))
+        last_end = placeholder_match.end()
+
+    parts.append(re.sub(pattern, callback, text[last_end:], flags=re.IGNORECASE))
+    return "".join(parts)
 
 
 def get_analyzer():
@@ -43,7 +64,7 @@ async def scrub_text(text: str, replacement_state: dict = None):
             scrubbed_text = scrubbed_text.replace(secret, placeholder)
             return
 
-        if SCRUBBING_MODE == "semantic" or label in ["EXCLUSION", "ENV_VALUE"]:
+        if constants.SCRUBBING_MODE == "semantic" or label in ["EXCLUSION", "ENV_VALUE"]:
             counts[label] = counts.get(label, 0) + 1
             placeholder = f"<{label}_{counts[label]}>"
         else:
@@ -59,16 +80,10 @@ async def scrub_text(text: str, replacement_state: dict = None):
             scrubbed_text = scrubbed_text.replace(secret, placeholder)
 
     # 1. process Custom Exclusions FIRST (Case-Insensitive)
-    with EXCLUSIONS_LOCK:
-        sorted_exclusions = sorted(DEFAULT_EXCLUSIONS, key=len, reverse=True)
+    with constants.EXCLUSIONS_LOCK:
+        sorted_exclusions = sorted(constants.DEFAULT_EXCLUSIONS, key=len, reverse=True)
 
     for excluded in sorted_exclusions:
-        # Use regex to find all case-insensitive matches
-        matches = re.finditer(re.escape(excluded), scrubbed_text, re.IGNORECASE)
-
-        # Sort matches by start position in reverse to avoid index shifts during replacement
-        # But wait, it's easier to just use re.sub with a callback to capture original text
-
         def replacement_callback(match):
             original_val = match.group(0)
             label = "EXCLUSION"
@@ -85,13 +100,17 @@ async def scrub_text(text: str, replacement_state: dict = None):
             seen_texts[original_val] = placeholder
             return placeholder
 
-        scrubbed_text = re.sub(re.escape(excluded), replacement_callback, scrubbed_text, flags=re.IGNORECASE)
+        scrubbed_text = replace_outside_placeholders(
+            scrubbed_text,
+            exclusion_pattern(excluded),
+            replacement_callback,
+        )
 
     # 2. Collect potential matches from subsequent analyzers
     potential_matches = []
 
     # Presidio PII Detection
-    if ANALYZER_TYPE in ["presidio", "both"]:
+    if constants.ANALYZER_TYPE in ["presidio", "both"]:
         az = get_analyzer()
         if az:
             results = az.analyze(text=scrubbed_text, language='en')
@@ -99,7 +118,7 @@ async def scrub_text(text: str, replacement_state: dict = None):
                 potential_matches.append((scrubbed_text[res.start:res.end], res.entity_type))
 
     # Pattern Detection
-    if ANALYZER_TYPE in ["pattern", "both"]:
+    if constants.ANALYZER_TYPE in ["pattern", "both"]:
         ips = re.findall(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', scrubbed_text)
         for ip in ips:
             potential_matches.append((ip, "IP_ADDRESS"))

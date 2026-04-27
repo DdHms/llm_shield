@@ -6,10 +6,9 @@ import uuid
 from datetime import datetime
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse, HTMLResponse
-import httpx
 
 from src import constants
-from src.constants import REQUEST_LOGS, DEFAULT_EXCLUSIONS, EXCLUSIONS_LOCK, SCRUBBING_MODE, ANALYZER_TYPE, log_debug
+from src.constants import REQUEST_LOGS, log_debug
 from src.shielding import scrub_text, de_scrub_stream
 from src.ui import get_dashboard_html, run_application
 
@@ -49,11 +48,11 @@ async def get_logs():
 
 @app.get("/api/config", dependencies=[Depends(require_dashboard_access)])
 async def get_config():
-    with EXCLUSIONS_LOCK:
+    with constants.EXCLUSIONS_LOCK:
         return {
-            "exclusions": list(DEFAULT_EXCLUSIONS),
-            "scrubbing_mode": SCRUBBING_MODE,
-            "analyzer_type": ANALYZER_TYPE,
+            "exclusions": list(constants.DEFAULT_EXCLUSIONS),
+            "scrubbing_mode": constants.SCRUBBING_MODE,
+            "analyzer_type": constants.ANALYZER_TYPE,
             "target_url": constants.TARGET_URL,
             "predefined_endpoints": constants.PREDEFINED_ENDPOINTS,
             "scrub_path_patterns": constants.SCRUB_PATH_PATTERNS
@@ -80,18 +79,18 @@ async def add_exclusion(request: Request):
     data = await request.json()
     phrase = data.get("phrase", "").strip()
     if phrase:
-        with EXCLUSIONS_LOCK:
-            if phrase not in DEFAULT_EXCLUSIONS:
-                DEFAULT_EXCLUSIONS.append(phrase)
+        with constants.EXCLUSIONS_LOCK:
+            if phrase not in constants.DEFAULT_EXCLUSIONS:
+                constants.DEFAULT_EXCLUSIONS.append(phrase)
         return {"status": "success", "phrase": phrase}
     return {"status": "error", "message": "Phrase cannot be empty"}, 400
 
 
 @app.delete("/api/exclusions/{phrase}", dependencies=[Depends(require_dashboard_access)])
 async def remove_exclusion(phrase: str):
-    with EXCLUSIONS_LOCK:
-        if phrase in DEFAULT_EXCLUSIONS:
-            DEFAULT_EXCLUSIONS.remove(phrase)
+    with constants.EXCLUSIONS_LOCK:
+        if phrase in constants.DEFAULT_EXCLUSIONS:
+            constants.DEFAULT_EXCLUSIONS.remove(phrase)
             return {"status": "success", "phrase": phrase}
     return {"status": "error", "message": "Phrase not found"}, 404
 
@@ -177,14 +176,14 @@ async def proxy_engine(request: Request, path: str):
     url = f"{constants.TARGET_URL}{target_path}"
     log_debug(f"Forwarding request to: {url}")
 
-    req = async_client.build_request(
+    req = constants.async_client.build_request(
         method=request.method, url=url, content=body,
         headers=headers, params=request.query_params
     )
 
     try:
         fwd_start = time.perf_counter()
-        response = await async_client.send(req, stream=True)
+        response = await constants.async_client.send(req, stream=True)
         log_debug(f"Target responded with status {response.status_code} in {time.perf_counter() - fwd_start:.4f}s")
     except Exception as e:
         log_debug(f"Forwarding ERROR: {str(e)}")
@@ -253,8 +252,6 @@ def run_application():
             print(f"GUI failed to start: {e}. Falling back to server only.")
             # If GUI fails (common in Docker), keep the thread alive or restart in main
             start_fastapi()
-
-async_client = httpx.AsyncClient(timeout=60.0)
 
 if __name__ == "__main__":
     run_application()
