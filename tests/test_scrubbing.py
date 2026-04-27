@@ -115,3 +115,29 @@ async def test_env_var_scrubbing():
     assert val not in scrubbed
     restored = de_scrub_text(scrubbed, mapping)
     assert restored == text
+
+
+@pytest.mark.asyncio
+async def test_shared_replacement_state_prevents_placeholder_collisions():
+    replacement_state = {"counts": {}, "seen_texts": {}}
+    first_secret = "KEY" + "123" + "AAA"
+    second_secret = "KEY" + "456" + "BBB"
+
+    first_scrubbed, first_mapping = await scrub_text(f"First field {first_secret}", replacement_state)
+    second_scrubbed, second_mapping = await scrub_text(f"Second field {second_secret}", replacement_state)
+
+    merged_mapping = {}
+    merged_mapping.update(first_mapping)
+    merged_mapping.update(second_mapping)
+
+    assert "<PRIVATE_DATA_1>" in first_scrubbed
+    assert "<PRIVATE_DATA_2>" in second_scrubbed
+    assert merged_mapping["<PRIVATE_DATA_1>"] == first_secret
+    assert merged_mapping["<PRIVATE_DATA_2>"] == second_secret
+
+    restored = de_scrub_text(
+        "Response mentions <PRIVATE_DATA_1> and <PRIVATE_DATA_2>.",
+        merged_mapping,
+    )
+    assert first_secret in restored
+    assert second_secret in restored

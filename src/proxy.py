@@ -116,6 +116,7 @@ async def proxy_engine(request: Request, path: str):
 
             log_debug("Starting Recursive PII Scrubbing...")
             scrub_start = time.perf_counter()
+            replacement_state = {"counts": {}, "seen_texts": {}}
 
             async def scrub_recursive(obj, in_tool=False):
                 if isinstance(obj, dict):
@@ -125,11 +126,11 @@ async def proxy_engine(request: Request, path: str):
                                                            "tool_response")
 
                         if k == "text" and isinstance(v, str):
-                            scrubbed, mapping = await scrub_text(v)
+                            scrubbed, mapping = await scrub_text(v, replacement_state)
                             obj[k] = scrubbed
                             pii_mapping.update(mapping)
                         elif current_in_tool and isinstance(v, str) and k not in ("name", "id", "type"):
-                            scrubbed, mapping = await scrub_text(v)
+                            scrubbed, mapping = await scrub_text(v, replacement_state)
                             obj[k] = scrubbed
                             pii_mapping.update(mapping)
                         else:

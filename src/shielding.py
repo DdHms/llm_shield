@@ -19,19 +19,28 @@ def get_analyzer():
     return analyzer
 
 
-async def scrub_text(text: str):
+async def scrub_text(text: str, replacement_state: dict = None):
     """
     Uses Presidio and custom regex/exclusion logic to redact PII.
     Processes DEFAULT_EXCLUSIONS first, then other analyzers sequentially.
     """
+    if replacement_state is None:
+        replacement_state = {}
+
     mapping = {}
     scrubbed_text = text
-    counts = {}
-    seen_texts = {}
+    counts = replacement_state.setdefault("counts", {})
+    seen_texts = replacement_state.setdefault("seen_texts", {})
 
     def apply_replacement(secret, label):
         nonlocal scrubbed_text
-        if not secret or secret in seen_texts:
+        if not secret:
+            return
+
+        if secret in seen_texts:
+            placeholder = seen_texts[secret]
+            mapping[placeholder] = secret
+            scrubbed_text = scrubbed_text.replace(secret, placeholder)
             return
 
         if SCRUBBING_MODE == "semantic" or label in ["EXCLUSION", "ENV_VALUE"]:
@@ -65,7 +74,9 @@ async def scrub_text(text: str):
             label = "EXCLUSION"
 
             if original_val in seen_texts:
-                return seen_texts[original_val]
+                placeholder = seen_texts[original_val]
+                mapping[placeholder] = original_val
+                return placeholder
 
             counts[label] = counts.get(label, 0) + 1
             placeholder = f"<{label}_{counts[label]}>"
