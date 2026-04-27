@@ -159,6 +159,46 @@ export OPENAI_API_KEY="sk-..."
 codex
 ```
 
+## 🔗 Claude Code Integration
+
+Claude Code supports `ANTHROPIC_BASE_URL` for routing requests through a proxy or gateway. Point it at the shield without adding `/v1`:
+
+```bash
+export ANTHROPIC_BASE_URL="http://localhost:8080"
+```
+
+Run the shield with Anthropic as the target provider:
+
+```bash
+docker build -t llm-proxy-pii .
+docker rm -f llm-proxy-pii-container 2>/dev/null
+docker run -d \
+  -p 127.0.0.1:8080:8080 \
+  -e HEADLESS=true \
+  -e TARGET_URL="https://api.anthropic.com" \
+  -e DEFAULT_EXCLUSIONS="your-name,your-project" \
+  --name llm-proxy-pii-container \
+  llm-proxy-pii
+```
+
+For API-key authentication, set `ANTHROPIC_API_KEY` before starting Claude Code:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+export ANTHROPIC_BASE_URL="http://localhost:8080"
+claude
+```
+
+When `ANTHROPIC_API_KEY` is set, Claude Code uses that key instead of your Claude subscription. To use your normal interactive Claude login/subscription instead, unset the key and run Claude Code normally:
+
+```bash
+unset ANTHROPIC_API_KEY
+export ANTHROPIC_BASE_URL="http://localhost:8080"
+claude
+```
+
+For gateway-style bearer auth, Claude Code also supports `ANTHROPIC_AUTH_TOKEN`, which is sent as an `Authorization: Bearer ...` header.
+
 ---
 
 ## 🧪 Development & Testing
