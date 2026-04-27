@@ -32,7 +32,7 @@ PREDEFINED_ENDPOINTS = {
 SCRUB_PATH_PATTERNS = [
     "v1internal", "v1/models", "v1beta/models",  # Gemini
     "v1/messages", "v1/complete",                # Anthropic/Claude
-    "v1/chat/completions", "v1/completions",     # OpenAI/Codex
+    "v1/chat/completions", "v1/completions", "v1/responses",  # OpenAI/Codex
     "publishers/google/models"                    # Vertex AI
 ]
 

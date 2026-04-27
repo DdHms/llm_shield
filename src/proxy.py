@@ -15,6 +15,8 @@ from src.ui import get_dashboard_html, run_application
 
 app = FastAPI()
 
+TEXT_CONTENT_TYPES = {"text", "input_text", "output_text"}
+
 
 async def require_dashboard_access(request: Request, response: Response):
     if not constants.DASHBOARD_TOKEN:
@@ -36,6 +38,148 @@ async def require_dashboard_access(request: Request, response: Response):
         return
 
     raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def provider_for_path(path: str) -> str:
+    if any(pattern in path for pattern in ("v1/chat/completions", "v1/completions", "v1/responses")):
+        return "openai"
+    if any(pattern in path for pattern in ("v1/messages", "v1/complete")):
+        return "anthropic"
+    return "generic"
+
+
+async def scrub_value(value, replacement_state: dict):
+    scrubbed, mapping = await scrub_text(value, replacement_state)
+    return scrubbed, mapping
+
+
+async def scrub_gemini_like_payload(data, replacement_state: dict, pii_mapping: dict):
+    async def scrub_recursive(obj, in_tool=False):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                current_in_tool = in_tool or k in (
+                    "functionResponse", "toolResult", "function_response", "tool_response"
+                )
+
+                if k == "text" and isinstance(v, str):
+                    scrubbed, mapping = await scrub_value(v, replacement_state)
+                    obj[k] = scrubbed
+                    pii_mapping.update(mapping)
+                elif current_in_tool and isinstance(v, str) and k not in ("name", "id", "type"):
+                    scrubbed, mapping = await scrub_value(v, replacement_state)
+                    obj[k] = scrubbed
+                    pii_mapping.update(mapping)
+                else:
+                    await scrub_recursive(v, current_in_tool)
+        elif isinstance(obj, list):
+            for item in obj:
+                await scrub_recursive(item, in_tool)
+
+    await scrub_recursive(data)
+
+
+async def scrub_text_content(content, replacement_state: dict, pii_mapping: dict):
+    if isinstance(content, str):
+        return await scrub_value(content, replacement_state)
+
+    if isinstance(content, list):
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+
+            item_type = item.get("type")
+            if item_type in TEXT_CONTENT_TYPES and isinstance(item.get("text"), str):
+                scrubbed, mapping = await scrub_value(item["text"], replacement_state)
+                item["text"] = scrubbed
+                pii_mapping.update(mapping)
+
+            if isinstance(item.get("content"), str):
+                scrubbed, mapping = await scrub_value(item["content"], replacement_state)
+                item["content"] = scrubbed
+                pii_mapping.update(mapping)
+
+        return None, {}
+
+    return None, {}
+
+
+async def scrub_openai_payload(data, replacement_state: dict, pii_mapping: dict):
+    if isinstance(data.get("instructions"), str):
+        scrubbed, mapping = await scrub_value(data["instructions"], replacement_state)
+        data["instructions"] = scrubbed
+        pii_mapping.update(mapping)
+
+    if isinstance(data.get("prompt"), str):
+        scrubbed, mapping = await scrub_value(data["prompt"], replacement_state)
+        data["prompt"] = scrubbed
+        pii_mapping.update(mapping)
+    elif isinstance(data.get("prompt"), list):
+        for idx, prompt in enumerate(data["prompt"]):
+            if isinstance(prompt, str):
+                scrubbed, mapping = await scrub_value(prompt, replacement_state)
+                data["prompt"][idx] = scrubbed
+                pii_mapping.update(mapping)
+
+    if isinstance(data.get("input"), str):
+        scrubbed, mapping = await scrub_value(data["input"], replacement_state)
+        data["input"] = scrubbed
+        pii_mapping.update(mapping)
+    elif isinstance(data.get("input"), list):
+        for idx, item in enumerate(data["input"]):
+            if isinstance(item, dict):
+                content = item.get("content")
+                scrubbed, mapping = await scrub_text_content(content, replacement_state, pii_mapping)
+                if isinstance(content, str):
+                    item["content"] = scrubbed
+                    pii_mapping.update(mapping)
+            elif isinstance(item, str):
+                scrubbed, mapping = await scrub_value(item, replacement_state)
+                data["input"][idx] = scrubbed
+                pii_mapping.update(mapping)
+
+    for message in data.get("messages", []):
+        if not isinstance(message, dict):
+            continue
+
+        content = message.get("content")
+        scrubbed, mapping = await scrub_text_content(content, replacement_state, pii_mapping)
+        if isinstance(content, str):
+            message["content"] = scrubbed
+            pii_mapping.update(mapping)
+
+
+async def scrub_anthropic_payload(data, replacement_state: dict, pii_mapping: dict):
+    if isinstance(data.get("system"), str):
+        scrubbed, mapping = await scrub_value(data["system"], replacement_state)
+        data["system"] = scrubbed
+        pii_mapping.update(mapping)
+    elif isinstance(data.get("system"), list):
+        await scrub_text_content(data["system"], replacement_state, pii_mapping)
+
+    if isinstance(data.get("prompt"), str):
+        scrubbed, mapping = await scrub_value(data["prompt"], replacement_state)
+        data["prompt"] = scrubbed
+        pii_mapping.update(mapping)
+
+    for message in data.get("messages", []):
+        if not isinstance(message, dict):
+            continue
+
+        content = message.get("content")
+        scrubbed, mapping = await scrub_text_content(content, replacement_state, pii_mapping)
+        if isinstance(content, str):
+            message["content"] = scrubbed
+            pii_mapping.update(mapping)
+
+
+async def scrub_llm_payload(data, path: str, replacement_state: dict, pii_mapping: dict):
+    provider = provider_for_path(path)
+    if provider == "openai":
+        await scrub_openai_payload(data, replacement_state, pii_mapping)
+    elif provider == "anthropic":
+        await scrub_anthropic_payload(data, replacement_state, pii_mapping)
+    else:
+        await scrub_gemini_like_payload(data, replacement_state, pii_mapping)
 
 @app.get("/health")
 async def health():
@@ -139,29 +283,7 @@ async def proxy_engine(request: Request, path: str):
             log_debug("Starting Recursive PII Scrubbing...")
             scrub_start = time.perf_counter()
             replacement_state = {"counts": {}, "seen_texts": {}}
-
-            async def scrub_recursive(obj, in_tool=False):
-                if isinstance(obj, dict):
-                    for k, v in obj.items():
-                        # Track if we are inside a tool result object
-                        current_in_tool = in_tool or k in ("functionResponse", "toolResult", "function_response",
-                                                           "tool_response")
-
-                        if k == "text" and isinstance(v, str):
-                            scrubbed, mapping = await scrub_text(v, replacement_state)
-                            obj[k] = scrubbed
-                            pii_mapping.update(mapping)
-                        elif current_in_tool and isinstance(v, str) and k not in ("name", "id", "type"):
-                            scrubbed, mapping = await scrub_text(v, replacement_state)
-                            obj[k] = scrubbed
-                            pii_mapping.update(mapping)
-                        else:
-                            await scrub_recursive(v, current_in_tool)
-                elif isinstance(obj, list):
-                    for item in obj:
-                        await scrub_recursive(item, in_tool)
-
-            await scrub_recursive(data)
+            await scrub_llm_payload(data, path, replacement_state, pii_mapping)
             log_debug(f"Scrubbing finished in {time.perf_counter() - scrub_start:.4f}s")
 
 
