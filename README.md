@@ -81,15 +81,6 @@ The most portable way to run the shield, especially in headless or cloud environ
 docker run -d -p 8080:8080 --name llm-shield llm-proxy-pii
 ```
 
-### 3. NPM (Local/Development)
-Best if you want to integrate the shield into a Node.js project or modify the source code.
-
-```bash
-npm install
-npm run build
-npm start
-```
-
 ---
 
 ## ⚙️ Usage & Configuration
@@ -143,14 +134,18 @@ $env:CODE_ASSIST_ENDPOINT="http://localhost:8080"
 
 ## 🧪 Development & Testing
 
-If you want to modify the Rust or Python code:
+If you want to modify the Python proxy:
 
-### Build from Source
-**Prerequisites:** Node.js (v22+), Rust & Cargo, Python 3.10+.
+### Run Locally
+**Prerequisites:** Python 3.10+.
 ```bash
-npm install
-npm run build
-npm start
+python -m pip install -r requirements.txt
+HEADLESS=true python src/proxy.py
+```
+
+### Build Docker Image
+```bash
+docker build -t llm-proxy-pii .
 ```
 
 ### Run Tests
