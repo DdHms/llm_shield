@@ -130,6 +130,35 @@ export CODE_ASSIST_ENDPOINT="http://localhost:8080"
 $env:CODE_ASSIST_ENDPOINT="http://localhost:8080"
 ```
 
+## 🔗 Codex CLI Integration
+
+To route Codex CLI traffic through the shield, set the OpenAI base URL in `~/.codex/config.toml`:
+
+```toml
+openai_base_url = "http://localhost:8080/v1"
+```
+
+Run the shield with OpenAI as the target provider:
+
+```bash
+docker build -t llm-proxy-pii .
+docker rm -f llm-proxy-pii-container 2>/dev/null
+docker run -d \
+  -p 127.0.0.1:8080:8080 \
+  -e HEADLESS=true \
+  -e TARGET_URL="https://api.openai.com" \
+  -e DEFAULT_EXCLUSIONS="your-name,your-project" \
+  --name llm-proxy-pii-container \
+  llm-proxy-pii
+```
+
+If you use API-key auth, keep your normal OpenAI key available:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+codex
+```
+
 ---
 
 ## 🧪 Development & Testing
