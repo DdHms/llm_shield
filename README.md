@@ -132,13 +132,9 @@ $env:CODE_ASSIST_ENDPOINT="http://localhost:8080"
 
 ## 🔗 Codex CLI Integration
 
-To route Codex CLI traffic through the shield, set the OpenAI base URL in `~/.codex/config.toml`:
+To route Codex CLI traffic through the shield, configure Codex to use the proxy as its OpenAI API base URL.
 
-```toml
-openai_base_url = "http://localhost:8080/v1"
-```
-
-Run the shield with OpenAI as the target provider:
+1. Start the shield with OpenAI as the target provider:
 
 ```bash
 docker build -t llm-proxy-pii .
@@ -152,11 +148,27 @@ docker run -d \
   llm-proxy-pii
 ```
 
-If you use API-key auth, keep your normal OpenAI key available:
+2. Set the Codex OpenAI base URL in `~/.codex/config.toml`:
+
+```toml
+openai_base_url = "http://localhost:8080/v1"
+```
+
+Include `/v1` in the Codex config. Codex calls endpoints such as `/responses` relative to that base URL, so the proxy receives `/v1/responses` and forwards it to `https://api.openai.com/v1/responses`.
+
+3. If you use API-key auth, keep your normal OpenAI key available before starting Codex:
 
 ```bash
 export OPENAI_API_KEY="sk-..."
 codex
+```
+
+If OpenAI returns `Missing scopes: api.model.read`, Codex has reached the proxy successfully, but the API key does not have permission to list models. Use an unrestricted key or a restricted key with model-read and Responses API permissions.
+
+To verify the proxy is receiving Codex traffic, open the dashboard or inspect:
+
+```bash
+docker logs llm-proxy-pii-container
 ```
 
 ## 🔗 Claude Code Integration
